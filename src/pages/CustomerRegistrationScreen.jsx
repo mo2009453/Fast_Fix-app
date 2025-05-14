@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
-import { MultiSelect } from '@/components/custom/MultiSelect.jsx';
+import { MultiSelect } from '@/MultiSelect.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { supabase } from '@/lib/supabaseClient.js';
