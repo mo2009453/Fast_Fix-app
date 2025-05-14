@@ -5,62 +5,56 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select } from '@/components/ui/select.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
-import { useNavigate } from 'react-router-dom'; // استبدال useRouter بـ useNavigate
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabaseClient.js';
 
 const TechnicianRegistrationScreen = () => {
   const { t, language } = useLanguage();
+  const navigate = useNavigate();
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [devices, setDevices] = useState([]);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [file, setFile] = useState(null);
 
-  const navigate = useNavigate(); // استخدام useNavigate بدلاً من useRouter
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
-    setSelectedFile(file);
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    
-    if (!fullName || !email || !phone || devices.length === 0 || !selectedFile) {
+    if (!fullName || !email || !phone || devices.length === 0 || !file) {
       alert(t('allFieldsRequired', 'Please fill in all fields.'));
       return;
     }
 
-    // رفع الملف إلى Supabase Storage هنا
-    const { data, error: fileError } = await supabase.storage
+    const fileExt = file.name.split('.').pop();
+    const filePath = `technicians/${Date.now()}.${fileExt}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
       .from('technician_files')
-      .upload(`files/${selectedFile.name}`, selectedFile);
+      .upload(filePath, file);
 
-    if (fileError) {
-      alert(t('fileUploadError', 'Error uploading file.'));
+    if (uploadError) {
+      alert(t('fileUploadError', 'File upload failed'));
       return;
     }
 
-    // إضافة البيانات إلى Supabase
-    const { data: technicianData, error: technicianError } = await supabase
+    const { error: insertError } = await supabase
       .from('technicians_pending')
-      .insert([
-        {
-          full_name: fullName,
-          email: email,
-          phone: phone,
-          devices: devices,
-          file_url: data?.Path,
-          status: 'pending',
-        },
-      ]);
+      .insert({
+        full_name: fullName,
+        email,
+        phone,
+        devices,
+        file_url: uploadData.path,
+        status: 'pending',
+      });
 
-    if (technicianError) {
-      alert(t('registrationError', 'Error registering technician.'));
+    if (insertError) {
+      alert(t('registrationError', 'Registration failed'));
       return;
     }
 
-    // التنقل إلى الشاشة التالية بعد التسجيل الناجح
-    navigate('/TechnicianPendingReviewScreen'); // استخدام navigate بدلاً من router.push
+    navigate('/TechnicianPendingReviewScreen');
   };
 
   return (
@@ -74,31 +68,41 @@ const TechnicianRegistrationScreen = () => {
     >
       <Card className="w-full max-w-lg text-center shadow-2xl glassmorphism-card">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold text-primary">{t('technicianRegistration', 'Technician Registration')}</CardTitle>
+          <CardTitle className="text-3xl font-bold text-primary">
+            {t('technicianRegistration', 'Technician Registration')}
+          </CardTitle>
+          <CardDescription>
+            {t('pleaseFillForm', 'Please fill out the form below to register as a technician.')}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Input
             label={t('fullName', 'Full Name')}
+            placeholder={t('enterFullName', 'Enter your full name')}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
           />
           <Input
             label={t('email', 'Email')}
             type="email"
+            placeholder="example@mail.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
           <Input
             label={t('phone', 'Phone')}
             type="tel"
+            placeholder="01xxxxxxxxx"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
           <Select
-            label={t('selectDevices', 'Select Devices')}
-            value={devices}
-            onChange={(e) => setDevices([...e.target.selectedOptions].map(option => option.value))}
+            label={t('devices', 'Devices')}
             multiple
+            value={devices}
+            onChange={(e) =>
+              setDevices([...e.target.selectedOptions].map((option) => option.value))
+            }
           >
             <option value="fridge">{t('fridge', 'Fridge')}</option>
             <option value="ac">{t('ac', 'Air Conditioner')}</option>
@@ -106,14 +110,14 @@ const TechnicianRegistrationScreen = () => {
             <option value="heater">{t('heater', 'Heater')}</option>
             <option value="stove">{t('stove', 'Stove')}</option>
           </Select>
-          <div>
-            <input
-              type="file"
-              onChange={handleFileChange}
-              className="file-input"
-            />
-          </div>
-          <Button onClick={handleSubmit}>{t('submit', 'Submit')}</Button>
+          <Input
+            label={t('uploadFile', 'Upload File')}
+            type="file"
+            onChange={(e) => setFile(e.target.files[0])}
+          />
+          <Button onClick={handleSubmit}>
+            {t('submit', 'Submit')}
+          </Button>
         </CardContent>
       </Card>
     </motion.div>
