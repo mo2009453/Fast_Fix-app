@@ -1,159 +1,208 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
-import bcrypt from 'bcryptjs';
+// TechnicianRegistrationScreen.jsx
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+"use client";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
-const devicesOptions = [
-  { value: 'fridge', label: 'ثلاجة' },
-  { value: 'ac', label: 'تكييف' },
-  { value: 'washing_machine', label: 'غسالة ملابس' },
-  { value: 'heater', label: 'سخان' },
-  { value: 'stove', label: 'بوتاجاز' },
-];
-
-const TechnicianRegistrationScreen = () => {
+export default function TechnicianRegistrationScreen() {
+  const [step, setStep] = useState(1);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [selectedDevices, setSelectedDevices] = useState([]);
+  const [idImage, setIdImage] = useState(null);
+  const [certImage, setCertImage] = useState(null);
   const router = useRouter();
 
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [devices, setDevices] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleDeviceToggle = (value) => {
-    setDevices((prev) =>
-      prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value]
-    );
+  const handleNext = () => {
+    if (!selectedDevices.length) {
+      alert("يرجى اختيار نوع جهاز واحد على الأقل");
+      return;
+    }
+    setStep(step + 1);
   };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  const handleDeviceChange = (device) => {
+    if (selectedDevices.includes(device)) {
+      setSelectedDevices(selectedDevices.filter((d) => d !== device));
+    } else {
+      setSelectedDevices([...selectedDevices, device]);
+    }
+  };
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+  const handleSubmit = async () => {
+    let idImageUrl = "";
+    let certImageUrl = "";
 
-    const { error } = await supabase.from('technicians_pending').insert([
+    if (idImage) {
+      const { data, error } = await supabase.storage
+        .from("technician_documents")
+        .upload(`ids/${Date.now()}_${idImage.name}`, idImage);
+      if (error) {
+        console.error("خطأ في رفع صورة الهوية:", error.message);
+        return;
+      }
+      idImageUrl = supabase.storage
+        .from("technician_documents")
+        .getPublicUrl(data.path).data.publicUrl;
+    }
+
+    if (certImage) {
+      const { data, error } = await supabase.storage
+        .from("technician_documents")
+        .upload(`certs/${Date.now()}_${certImage.name}`, certImage);
+      if (error) {
+        console.error("خطأ في رفع الشهادة:", error.message);
+        return;
+      }
+      certImageUrl = supabase.storage
+        .from("technician_documents")
+        .getPublicUrl(data.path).data.publicUrl;
+    }
+
+    const { error } = await supabase.from("technicians_pending").insert([
       {
         full_name: fullName,
-        phone,
         email,
-        password: hashedPassword,
-        devices,
-        status: 'pending',
+        phone,
+        password,
+        devices: selectedDevices,
+        id_image_url: idImageUrl,
+        cert_image_url: certImageUrl,
+        status: "pending",
+        created_at: new Date().toISOString(),
       },
     ]);
 
-    setIsSubmitting(false);
-
     if (error) {
-      alert('حدث خطأ أثناء التسجيل: ' + error.message);
+      console.error("فشل حفظ البيانات:", error.message);
     } else {
-      router.push('/TechnicianPendingReviewScreen');
+      router.push("/technician/pending-review");
     }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.5 }}
-      className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-secondary/10 to-background p-4"
-    >
-      <Card className="w-full max-w-xl shadow-lg border border-gray-200">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center text-primary">
-            تسجيل كفني جديد
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <form onSubmit={handleRegister} className="space-y-5">
-            <div>
-              <label className="block mb-1 font-medium">الاسم الكامل</label>
-              <Input
-                type="text"
-                placeholder="ادخل اسمك بالكامل"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
-            </div>
+    <div className="flex justify-center items-center h-screen">
+      <Card className="w-full max-w-md">
+        <CardContent className="p-6">
+          <AnimatePresence mode="wait">
+            {step === 1 && (
+              <motion.div
+                key="step1"
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 50 }}
+                transition={{ duration: 0.3 }}
+              >
+                <h2 className="text-xl font-semibold mb-4">معلومات التسجيل</h2>
+                <div className="space-y-4">
+                  <div>
+                    <Label>الاسم الكامل</Label>
+                    <Input
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>البريد الإلكتروني</Label>
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>رقم الجوال</Label>
+                    <Input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>كلمة المرور</Label>
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>الأجهزة المتخصصة</Label>
+                    <div className="space-y-1">
+                      {["غسالة", "ثلاجة", "مكيف", "سخان", "بوتاجاز"].map(
+                        (device) => (
+                          <label
+                            key={device}
+                            className="flex items-center space-x-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedDevices.includes(device)}
+                              onChange={() => handleDeviceChange(device)}
+                            />
+                            <span>{device}</span>
+                          </label>
+                        )
+                      )}
+                    </div>
+                  </div>
+                  <Button onClick={handleNext} className="w-full mt-4">
+                    التالي
+                  </Button>
+                </div>
+              </motion.div>
+            )}
 
-            <div>
-              <label className="block mb-1 font-medium">رقم الهاتف</label>
-              <Input
-                type="tel"
-                placeholder="مثال: 01012345678"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">البريد الإلكتروني</label>
-              <Input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">كلمة المرور</label>
-              <Input
-                type="password"
-                placeholder="********"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-<div>
-  <label className="block mb-2 font-medium">الأجهزة التي تتخصص فيها</label>
-  <div className="grid grid-cols-2 gap-3">
-    {devicesOptions.map(({ value, label }) => {
-      const isSelected = devices.includes(value);
-      return (
-        <div
-          key={value}
-          onClick={() => handleDeviceToggle(value)}
-          className={`cursor-pointer rounded-xl p-3 border text-center font-medium transition ${
-            isSelected
-              ? 'bg-primary text-white border-primary'
-              : 'bg-white hover:bg-muted border-gray-300'
-          }`}
-        >
-          {label}
-        </div>
-      );
-    })}
-  </div>
-  <p className="text-xs text-muted-foreground mt-2">
-    اضغط على الأجهزة التي يمكنك العمل عليها لتحديدها.
-  </p>
-</div>
-
-            <Button type="submit" disabled={isSubmitting} className="w-full mt-4">
-              {isSubmitting ? 'جاري التسجيل...' : 'تسجيل'}
-            </Button>
-          </form>
+            {step === 2 && (
+              <motion.div
+                key="step2"
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -50 }}
+                transition={{ duration: 0.3 }}
+              >
+                <h2 className="text-xl font-semibold mb-4">المرفقات</h2>
+                <div className="space-y-4">
+                  <div>
+                    <Label>صورة الهوية</Label>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setIdImage(e.target.files[0])}
+                    />
+                  </div>
+                  <div>
+                    <Label>شهادة الخبرة</Label>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setCertImage(e.target.files[0])}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setStep(step - 1)}
+                    >
+                      رجوع
+                    </Button>
+                    <Button onClick={handleSubmit}>إرسال</Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
-};
-
-export default TechnicianRegistrationScreen;
+}
