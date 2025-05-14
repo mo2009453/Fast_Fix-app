@@ -1,112 +1,119 @@
-// TechnicianRegistrationScreen.jsx
-
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { supabase } from '@/lib/supabaseClient';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { useLanguage } from '@/contexts/LanguageContext';
-
-const devicesOptions = ['ثلاجة', 'تكييف', 'غسالة ملابس', 'سخان', 'بوتاجاز'];
+import { Input } from '@/components/ui/input.jsx';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { Select } from '@/components/ui/select.jsx';
+import { Button } from '@/components/ui/button.jsx';
+import { useLanguage } from '@/contexts/LanguageContext.jsx';
+import { useNavigate } from 'react-router-dom'; // استبدال useRouter بـ useNavigate
 
 const TechnicianRegistrationScreen = () => {
   const { t, language } = useLanguage();
-  const navigate = useNavigate();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [devices, setDevices] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
 
-  const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    password: '',
-    phone: '',
-    devices: [],
-  });
+  const navigate = useNavigate(); // استخدام useNavigate بدلاً من useRouter
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    setSelectedFile(file);
   };
 
-  const handleDeviceToggle = (device) => {
-    setFormData((prev) => ({
-      ...prev,
-      devices: prev.devices.includes(device)
-        ? prev.devices.filter((d) => d !== device)
-        : [...prev.devices, device],
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const { full_name, email, password, phone, devices } = formData;
-
-    if (!email || !password || !full_name || !phone || devices.length === 0) {
-      alert('يرجى ملء جميع الحقول واختيار جهاز واحد على الأقل.');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    
+    if (!fullName || !email || !phone || devices.length === 0 || !selectedFile) {
+      alert(t('allFieldsRequired', 'Please fill in all fields.'));
       return;
     }
 
-    try {
-      const { error } = await supabase.from('technicians_pending').insert([
+    // رفع الملف إلى Supabase Storage هنا
+    const { data, error: fileError } = await supabase.storage
+      .from('technician_files')
+      .upload(`files/${selectedFile.name}`, selectedFile);
+
+    if (fileError) {
+      alert(t('fileUploadError', 'Error uploading file.'));
+      return;
+    }
+
+    // إضافة البيانات إلى Supabase
+    const { data: technicianData, error: technicianError } = await supabase
+      .from('technicians_pending')
+      .insert([
         {
-          full_name,
-          email,
-          password,
-          phone,
-          devices,
+          full_name: fullName,
+          email: email,
+          phone: phone,
+          devices: devices,
+          file_url: data?.Path,
           status: 'pending',
         },
       ]);
 
-      if (error) throw error;
-
-      navigate('/TechnicianPendingReviewScreen');
-    } catch (err) {
-      console.error('Registration Error:', err.message);
-      alert('حدث خطأ أثناء التسجيل. حاول مرة أخرى.');
+    if (technicianError) {
+      alert(t('registrationError', 'Error registering technician.'));
+      return;
     }
+
+    // التنقل إلى الشاشة التالية بعد التسجيل الناجح
+    navigate('/TechnicianPendingReviewScreen'); // استخدام navigate بدلاً من router.push
   };
 
   return (
     <motion.div
-      className="flex items-center justify-center min-h-screen p-4 bg-muted/20"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+      className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-background via-secondary/20 to-background"
+      key={language}
     >
-      <Card className="w-full max-w-xl">
+      <Card className="w-full max-w-lg text-center shadow-2xl glassmorphism-card">
         <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold text-primary">
-            {t('technicianRegister', 'تسجيل الفني')}
-          </CardTitle>
+          <CardTitle className="text-3xl font-bold text-primary">{t('technicianRegistration', 'Technician Registration')}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input name="full_name" placeholder="الاسم الكامل" value={formData.full_name} onChange={handleChange} />
-            <Input name="email" placeholder="البريد الإلكتروني" value={formData.email} onChange={handleChange} />
-            <Input name="password" placeholder="كلمة المرور" value={formData.password} onChange={handleChange} type="password" />
-            <Input name="phone" placeholder="رقم الهاتف" value={formData.phone} onChange={handleChange} />
-
-            <div>
-              <p className="mb-2 text-sm font-medium text-muted-foreground">اختر الأجهزة المتخصصة</p>
-              <div className="flex flex-wrap gap-2">
-                {devicesOptions.map((device) => (
-                  <Button
-                    key={device}
-                    type="button"
-                    variant={formData.devices.includes(device) ? 'default' : 'outline'}
-                    onClick={() => handleDeviceToggle(device)}
-                  >
-                    {device}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <Button type="submit" className="w-full">
-              تسجيل
-            </Button>
-          </form>
+        <CardContent className="space-y-4">
+          <Input
+            label={t('fullName', 'Full Name')}
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+          <Input
+            label={t('email', 'Email')}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Input
+            label={t('phone', 'Phone')}
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+          <Select
+            label={t('selectDevices', 'Select Devices')}
+            value={devices}
+            onChange={(e) => setDevices([...e.target.selectedOptions].map(option => option.value))}
+            multiple
+          >
+            <option value="fridge">{t('fridge', 'Fridge')}</option>
+            <option value="ac">{t('ac', 'Air Conditioner')}</option>
+            <option value="washing_machine">{t('washingMachine', 'Washing Machine')}</option>
+            <option value="heater">{t('heater', 'Heater')}</option>
+            <option value="stove">{t('stove', 'Stove')}</option>
+          </Select>
+          <div>
+            <input
+              type="file"
+              onChange={handleFileChange}
+              className="file-input"
+            />
+          </div>
+          <Button onClick={handleSubmit}>{t('submit', 'Submit')}</Button>
         </CardContent>
       </Card>
     </motion.div>
