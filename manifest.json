@@ -1,0 +1,22 @@
+{
+  "name": "Fast Fix",
+  "short_name": "FastFix",
+  "description": "تطبيق Fast Fix هو منصة ذكية لطلب فنيين صيانة الأجهزة المنزلية بكل سهولة وسرعة، مع تحديد الموقع والتقييم الفوري.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1f1f1",
+  "theme_color": "#1e88e5",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
