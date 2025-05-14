@@ -1,158 +1,137 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button.jsx';
-import { Input } from '@/components/ui/input.jsx';
-import { Label } from '@/components/ui/label.jsx';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card.jsx';
-import { useToast } from '@/components/ui/use-toast.jsx';
-import { useLanguage } from '@/contexts/LanguageContext.jsx';
-import { UserPlus, LogIn } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
 
-const CustomerRegistrationScreen = () => {
+const TechnicianRegistrationScreen = () => {
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState({
+    full_name: '',
+    email: '',
+    password: '',
+    phone: '',
+    specialties: [],
+    id_image: null,
+    certificates: null,
+  });
+
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const { t, language } = useLanguage();
+  const specialtiesOptions = ['Refrigerator', 'Washing Machine', 'Air Conditioner'];
 
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const handleChange = (e) => {
+    const { name, value, files, type } = e.target;
+    if (type === 'file') {
+      setFormData({ ...formData, [name]: files[0] });
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  const handleSpecialtiesChange = (value) => {
+    const isSelected = formData.specialties.includes(value);
+    setFormData({
+      ...formData,
+      specialties: isSelected
+        ? formData.specialties.filter((s) => s !== value)
+        : [...formData.specialties, value],
+    });
+  };
 
-    if (!fullName || !email || !password || !confirmPassword) {
-      toast({
-        title: t('error'),
-        description: t('allFieldsRequired', 'All fields are required.'),
-        variant: 'destructive',
+  const uploadFile = async (file, path) => {
+    const { data, error } = await supabase.storage.from('technician_files').upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) throw error;
+    return data.path;
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const idImagePath = await uploadFile(formData.id_image, `ids/${Date.now()}_${formData.id_image.name}`);
+      const certPath = await uploadFile(formData.certificates, `certificates/${Date.now()}_${formData.certificates.name}`);
+
+      const { error } = await supabase.from('technicians_pending').insert({
+        full_name: formData.full_name,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        specialties: formData.specialties,
+        id_image_url: idImagePath,
+        certificate_url: certPath,
+        status: 'pending',
+        created_at: new Date().toISOString(),
       });
-      setLoading(false);
-      return;
-    }
-    if (password !== confirmPassword) {
-      toast({
-        title: t('error'),
-        description: t('passwordsDontMatch'),
-        variant: 'destructive',
-      });
-      setLoading(false);
-      return;
-    }
 
-    const { data, error } = await supabase.from('customers').insert([
-      { full_name: fullName, email, password, balance: 0 },
-    ]);
+      if (error) throw error;
 
-    if (error) {
-      toast({ title: t('error'), description: error.message, variant: 'destructive' });
-      setLoading(false);
-      return;
+      navigate('/technician-pending');
+    } catch (err) {
+      console.error('Error submitting form:', err.message);
     }
-
-    toast({ title: t('success'), description: t('registrationSuccessful') });
-    setLoading(false);
-    navigate('/login/customer');
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.5 }}
-      className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-background via-secondary/20 to-background"
-      key={language}
-    >
-      <Card className="w-full max-w-md shadow-2xl glassmorphism-card">
-        <CardHeader className="text-center">
-          <UserPlus size={48} className="mx-auto mb-4 text-primary" />
-          <CardTitle className="text-3xl font-bold text-primary">
-            {t('register')} - {t('customer')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'customerRegistrationSubtitle',
-              'Create your customer account to start booking services.'
-            )}
-          </CardDescription>
+    <div className="flex items-center justify-center min-h-screen bg-muted p-4">
+      <Card className="w-full max-w-2xl">
+        <CardHeader>
+          <CardTitle className="text-2xl">Technician Registration</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <Label htmlFor="fullName">{t('fullName')}</Label>
-              <Input
-                id="fullName"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                className="bg-background/70"
-              />
-            </div>
-            <div>
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="bg-background/70"
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">{t('password')}</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="bg-background/70"
-              />
-            </div>
-            <div>
-              <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="bg-background/70"
-              />
-            </div>
-            <Button
-              type="submit"
-              className="w-full text-lg py-3 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-primary-foreground"
-              disabled={loading}
-            >
-              {loading ? t('loading', 'Loading...') : t('register')}
-            </Button>
-          </form>
+          {step === 1 && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <div className="space-y-4">
+                <Input name="full_name" placeholder="Full Name" onChange={handleChange} />
+                <Input name="email" placeholder="Email" onChange={handleChange} />
+                <Input name="password" placeholder="Password" type="password" onChange={handleChange} />
+                <Input name="phone" placeholder="Phone Number" onChange={handleChange} />
+                <div>
+                  <p className="mb-2 font-medium">Select Specialties:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {specialtiesOptions.map((item) => (
+                      <Button
+                        key={item}
+                        variant={formData.specialties.includes(item) ? 'default' : 'outline'}
+                        onClick={() => handleSpecialtiesChange(item)}
+                        type="button"
+                      >
+                        {item}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <Button onClick={() => setStep(2)} className="mt-4 w-full">
+                  Next
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 2 && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <div className="space-y-4">
+                <div>
+                  <label>ID Image</label>
+                  <Input name="id_image" type="file" accept="image/*" onChange={handleChange} />
+                </div>
+                <div>
+                  <label>Certificates</label>
+                  <Input name="certificates" type="file" accept="image/*,application/pdf" onChange={handleChange} />
+                </div>
+                <div className="flex justify-between mt-6">
+                  <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
+                  <Button onClick={handleSubmit}>Submit</Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
         </CardContent>
-        <CardFooter className="flex justify-center">
-          <Button variant="link" asChild className="text-accent hover:underline">
-            <Link to="/login/customer">
-              <LogIn className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              {t('alreadyHaveAccount', 'Already have an account? Login')}
-            </Link>
-          </Button>
-        </CardFooter>
       </Card>
-    </motion.div>
+    </div>
   );
 };
 
-export default CustomerRegistrationScreen;
+export default TechnicianRegistrationScreen;
