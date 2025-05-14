@@ -121,30 +121,30 @@ const TechnicianRegistrationScreen = () => {
                 required
               />
             </div>
-
-            <div>
-              <label className="block mb-2 font-medium">الأجهزة التي تتخصص فيها</label>
-              <div className="grid grid-cols-2 gap-3">
-                {devicesOptions.map(({ value, label }) => (
-                  <label
-                    key={value}
-                    className="flex items-center space-x-2 cursor-pointer border rounded-xl px-3 py-2 hover:bg-muted transition"
-                  >
-                    <input
-                      type="checkbox"
-                      value={value}
-                      checked={devices.includes(value)}
-                      onChange={() => handleDeviceToggle(value)}
-                      className="accent-primary w-4 h-4"
-                    />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                اختر الأجهزة التي يمكنك العمل عليها.
-              </p>
-            </div>
+<div>
+  <label className="block mb-2 font-medium">الأجهزة التي تتخصص فيها</label>
+  <div className="grid grid-cols-2 gap-3">
+    {devicesOptions.map(({ value, label }) => {
+      const isSelected = devices.includes(value);
+      return (
+        <div
+          key={value}
+          onClick={() => handleDeviceToggle(value)}
+          className={`cursor-pointer rounded-xl p-3 border text-center font-medium transition ${
+            isSelected
+              ? 'bg-primary text-white border-primary'
+              : 'bg-white hover:bg-muted border-gray-300'
+          }`}
+        >
+          {label}
+        </div>
+      );
+    })}
+  </div>
+  <p className="text-xs text-muted-foreground mt-2">
+    اضغط على الأجهزة التي يمكنك العمل عليها لتحديدها.
+  </p>
+</div>
 
             <Button type="submit" disabled={isSubmitting} className="w-full mt-4">
               {isSubmitting ? 'جاري التسجيل...' : 'تسجيل'}
