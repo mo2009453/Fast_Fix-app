@@ -1,50 +1,114 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import { supabase } from '@/lib/supabaseClient';
 import { motion } from 'framer-motion';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
-import bcrypt from 'bcryptjs';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card.jsx';
+import { Hourglass, MailCheck, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext.jsx';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
-const TechnicianRegistrationScreen = () => {
+const TechnicianPendingReviewScreen = () => {
+  const { t, language } = useLanguage();
+  const [status, setStatus] = useState('loading');
   const router = useRouter();
 
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [devices, setDevices] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  useEffect(() => {
+    const fetchTechnicianStatus = async () => {
+      const email = localStorage.getItem('technician_email');
+      if (!email) return setStatus('error');
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+      const { data, error } = await supabase
+        .from('technician_pending')
+        .select('status')
+        .eq('email', email)
+        .single();
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+      if (error || !data) {
+        setStatus('error');
+      } else {
+        setStatus(data.status);
+      }
+    };
 
-    const { error } = await supabase.from('technicians_pending').insert([
-      {
-        full_name: fullName,
-        phone,
-        email,
-        password: hashedPassword,
-        devices,
-        status: 'pending',
-      },
-    ]);
+    fetchTechnicianStatus();
+  }, []);
 
-    setIsSubmitting(false);
-
-    if (error) {
-      alert('حدث خطأ أثناء التسجيل: ' + error.message);
-    } else {
-      router.push('/TechnicianPendingReviewScreen');
+  const renderContent = () => {
+    switch (status) {
+      case 'pending':
+        return (
+          <Card className="w-full max-w-lg text-center shadow-2xl glassmorphism-card">
+            <CardHeader>
+              <motion.div
+                animate={{ rotateY: [0, 180, 360] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                className="mx-auto mb-6"
+              >
+                <Hourglass size={64} className="text-primary" />
+              </motion.div>
+              <CardTitle className="text-3xl font-bold text-primary">
+                {t('applicationPending', 'Application Pending Review')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <CardDescription className="text-lg text-muted-foreground">
+                {t('applicationUnderReview')}
+              </CardDescription>
+              <div className="flex items-center justify-center text-sm text-accent">
+                <MailCheck size={20} className="ltr:mr-2 rtl:ml-2" />
+                <span>
+                  {t('notificationViaPush', 'We will notify you via push notification and email.')}
+                </span>
+              </div>
+              <img
+                alt="Technician reviewing documents"
+                className="w-full max-w-xs mx-auto mt-6 rounded-lg shadow-md"
+                src="https://images.unsplash.com/photo-1603201667141-5a2d4c673378"
+              />
+            </CardContent>
+          </Card>
+        );
+      case 'accepted':
+        return (
+          <Card className="w-full max-w-lg text-center shadow-2xl glassmorphism-card">
+            <CardHeader>
+              <ThumbsUp size={64} className="mx-auto mb-4 text-green-500" />
+              <CardTitle className="text-3xl font-bold text-green-600">
+                {t('applicationAccepted', 'Application Accepted!')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CardDescription>
+                {t('youCanNowAccessDashboard', 'You can now access your technician dashboard.')}
+              </CardDescription>
+            </CardContent>
+          </Card>
+        );
+      case 'rejected':
+        return (
+          <Card className="w-full max-w-lg text-center shadow-2xl glassmorphism-card">
+            <CardHeader>
+              <ThumbsDown size={64} className="mx-auto mb-4 text-red-500" />
+              <CardTitle className="text-3xl font-bold text-red-600">
+                {t('applicationRejected', 'Application Rejected')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CardDescription>
+                {t('applicationRejectedMessage', 'Unfortunately, your application has been rejected.')}
+              </CardDescription>
+            </CardContent>
+          </Card>
+        );
+      case 'error':
+        return <p className="text-red-500">{t('errorFetchingStatus', 'Error fetching technician status.')}</p>;
+      default:
+        return <p className="text-muted-foreground">{t('loading', 'Loading...')}</p>;
     }
   };
 
@@ -53,102 +117,13 @@ const TechnicianRegistrationScreen = () => {
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.5 }}
-      className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-secondary/10 to-background p-4"
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+      className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-background via-secondary/20 to-background"
+      key={language}
     >
-      <Card className="w-full max-w-xl shadow-lg border border-gray-200">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center text-primary">
-            تسجيل كفني جديد
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <form onSubmit={handleRegister} className="space-y-5">
-            <div>
-              <label className="block mb-1 font-medium">الاسم الكامل</label>
-              <Input
-                type="text"
-                placeholder="ادخل اسمك بالكامل"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">رقم الهاتف</label>
-              <Input
-                type="tel"
-                placeholder="مثال: 01012345678"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">البريد الإلكتروني</label>
-              <Input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">كلمة المرور</label>
-              <Input
-                type="password"
-                placeholder="********"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">الأجهزة التي تتخصص فيها</label>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { value: 'fridge', label: 'ثلاجة' },
-                  { value: 'ac', label: 'تكييف' },
-                  { value: 'washing_machine', label: 'غسالة ملابس' },
-                  { value: 'heater', label: 'سخان' },
-                  { value: 'stove', label: 'بوتاجاز' },
-                ].map(({ value, label }) => (
-                  <label key={value} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      value={value}
-                      checked={devices.includes(value)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setDevices((prev) => [...prev, value]);
-                        } else {
-                          setDevices((prev) => prev.filter((item) => item !== value));
-                        }
-                      }}
-                      className="accent-primary w-4 h-4"
-                    />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                اختر الأجهزة التي يمكنك العمل عليها.
-              </p>
-            </div>
-
-            <Button type="submit" disabled={isSubmitting} className="w-full mt-4">
-              {isSubmitting ? 'جاري التسجيل...' : 'تسجيل'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      {renderContent()}
     </motion.div>
   );
 };
 
-export default TechnicianRegistrationScreen;
+export default TechnicianPendingReviewScreen;
