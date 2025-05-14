@@ -15,7 +15,7 @@ import {
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { UserPlus, LogIn } from 'lucide-react';
-import { supabase } from '@/src/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 const CustomerRegistrationScreen = () => {
   const navigate = useNavigate();
