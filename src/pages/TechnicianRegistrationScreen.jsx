@@ -1,7 +1,7 @@
-// pages/TechnicianRegistrationScreen.jsx
+// TechnicianRegistrationScreen.jsx
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/router';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,17 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-const devicesOptions = [
-  'ثلاجة',
-  'تكييف',
-  'غسالة ملابس',
-  'سخان',
-  'بوتاجاز',
-];
+const devicesOptions = ['ثلاجة', 'تكييف', 'غسالة ملابس', 'سخان', 'بوتاجاز'];
 
 const TechnicianRegistrationScreen = () => {
   const { t, language } = useLanguage();
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     full_name: '',
@@ -67,7 +61,7 @@ const TechnicianRegistrationScreen = () => {
 
       if (error) throw error;
 
-      router.push('/TechnicianPendingReviewScreen');
+      navigate('/TechnicianPendingReviewScreen');
     } catch (err) {
       console.error('Registration Error:', err.message);
       alert('حدث خطأ أثناء التسجيل. حاول مرة أخرى.');
@@ -88,37 +82,13 @@ const TechnicianRegistrationScreen = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              name="full_name"
-              placeholder={t('fullName', 'الاسم الكامل')}
-              value={formData.full_name}
-              onChange={handleChange}
-            />
-            <Input
-              name="email"
-              placeholder={t('email', 'البريد الإلكتروني')}
-              value={formData.email}
-              onChange={handleChange}
-              type="email"
-            />
-            <Input
-              name="password"
-              placeholder={t('password', 'كلمة المرور')}
-              value={formData.password}
-              onChange={handleChange}
-              type="password"
-            />
-            <Input
-              name="phone"
-              placeholder={t('phone', 'رقم الهاتف')}
-              value={formData.phone}
-              onChange={handleChange}
-            />
+            <Input name="full_name" placeholder="الاسم الكامل" value={formData.full_name} onChange={handleChange} />
+            <Input name="email" placeholder="البريد الإلكتروني" value={formData.email} onChange={handleChange} />
+            <Input name="password" placeholder="كلمة المرور" value={formData.password} onChange={handleChange} type="password" />
+            <Input name="phone" placeholder="رقم الهاتف" value={formData.phone} onChange={handleChange} />
 
             <div>
-              <p className="mb-2 text-sm font-medium text-muted-foreground">
-                {t('chooseDevices', 'اختر الأجهزة المتخصصة')}
-              </p>
+              <p className="mb-2 text-sm font-medium text-muted-foreground">اختر الأجهزة المتخصصة</p>
               <div className="flex flex-wrap gap-2">
                 {devicesOptions.map((device) => (
                   <Button
@@ -134,7 +104,7 @@ const TechnicianRegistrationScreen = () => {
             </div>
 
             <Button type="submit" className="w-full">
-              {t('submit', 'تسجيل')}
+              تسجيل
             </Button>
           </form>
         </CardContent>
