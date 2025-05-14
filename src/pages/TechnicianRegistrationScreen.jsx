@@ -22,7 +22,7 @@ const TechnicianRegistrationScreen = () => {
     e.preventDefault();
 
     if (!fullName || !email || !phone || devices.length === 0 || !file) {
-      alert(t('allFieldsRequired', 'Please fill in all fields.'));
+      alert('يرجى ملء جميع الحقول المطلوبة.');
       return;
     }
 
@@ -34,7 +34,7 @@ const TechnicianRegistrationScreen = () => {
       .upload(filePath, file);
 
     if (uploadError) {
-      alert(t('fileUploadError', 'File upload failed'));
+      alert('فشل في رفع الملف.');
       return;
     }
 
@@ -50,7 +50,7 @@ const TechnicianRegistrationScreen = () => {
       });
 
     if (insertError) {
-      alert(t('registrationError', 'Registration failed'));
+      alert('حدث خطأ أثناء التسجيل.');
       return;
     }
 
@@ -59,64 +59,82 @@ const TechnicianRegistrationScreen = () => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
+      initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-background via-secondary/20 to-background"
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      className="flex items-center justify-center min-h-screen p-6 bg-gradient-to-br from-background via-secondary/20 to-background"
       key={language}
     >
-      <Card className="w-full max-w-lg text-center shadow-2xl glassmorphism-card">
+      <Card className="w-full max-w-xl text-start shadow-2xl glassmorphism-card p-4">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold text-primary">
-            {t('technicianRegistration', 'Technician Registration')}
+          <CardTitle className="text-3xl font-bold text-primary mb-2">
+            تسجيل فني جديد
           </CardTitle>
-          <CardDescription>
-            {t('pleaseFillForm', 'Please fill out the form below to register as a technician.')}
+          <CardDescription className="text-muted-foreground">
+            يرجى تعبئة البيانات التالية بدقة لتسجيلك كمقدم خدمة.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Input
-            label={t('fullName', 'Full Name')}
-            placeholder={t('enterFullName', 'Enter your full name')}
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-          />
-          <Input
-            label={t('email', 'Email')}
-            type="email"
-            placeholder="example@mail.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Input
-            label={t('phone', 'Phone')}
-            type="tel"
-            placeholder="01xxxxxxxxx"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-          <Select
-            label={t('devices', 'Devices')}
-            multiple
-            value={devices}
-            onChange={(e) =>
-              setDevices([...e.target.selectedOptions].map((option) => option.value))
-            }
-          >
-            <option value="fridge">{t('fridge', 'Fridge')}</option>
-            <option value="ac">{t('ac', 'Air Conditioner')}</option>
-            <option value="washing_machine">{t('washingMachine', 'Washing Machine')}</option>
-            <option value="heater">{t('heater', 'Heater')}</option>
-            <option value="stove">{t('stove', 'Stove')}</option>
-          </Select>
-          <Input
-            label={t('uploadFile', 'Upload File')}
-            type="file"
-            onChange={(e) => setFile(e.target.files[0])}
-          />
-          <Button onClick={handleSubmit}>
-            {t('submit', 'Submit')}
+
+        <CardContent className="space-y-5 mt-4">
+          <div>
+            <label className="block mb-1 font-medium">الاسم الكامل</label>
+            <Input
+              placeholder="أدخل اسمك الكامل"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">البريد الإلكتروني</label>
+            <Input
+              type="email"
+              placeholder="example@mail.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">رقم الهاتف</label>
+            <Input
+              type="tel"
+              placeholder="01xxxxxxxxx"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">الأجهزة التي تتخصص فيها</label>
+            <select
+              multiple
+              value={devices}
+              onChange={(e) =>
+                setDevices([...e.target.selectedOptions].map((opt) => opt.value))
+              }
+              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="fridge">ثلاجة</option>
+              <option value="ac">تكييف</option>
+              <option value="washing_machine">غسالة ملابس</option>
+              <option value="heater">سخان</option>
+              <option value="stove">بوتاجاز</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">اضغط مع الاستمرار لتحديد أكثر من جهاز.</p>
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">رفع ملف التعريف (CV أو صورة شهادة)</label>
+            <Input
+              type="file"
+              onChange={(e) => setFile(e.target.files[0])}
+            />
+          </div>
+
+          <Button className="w-full mt-4" onClick={handleSubmit}>
+            تسجيل
           </Button>
         </CardContent>
       </Card>
