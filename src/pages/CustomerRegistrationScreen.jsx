@@ -41,6 +41,7 @@ const CustomerRegistrationScreen = () => {
       setLoading(false);
       return;
     }
+
     if (password !== confirmPassword) {
       toast({
         title: t('error'),
@@ -51,9 +52,12 @@ const CustomerRegistrationScreen = () => {
       return;
     }
 
-    const { data, error } = await supabase.from('customers').insert([
-      { full_name: fullName, email, password, balance: 0 },
-    ]);
+    const { data, error } = await supabase
+      .schema('public') // تحديد schema
+      .from('customers')
+      .insert([
+        { full_name: fullName, email, password, balance: 0 },
+      ]);
 
     if (error) {
       toast({ title: t('error'), description: error.message, variant: 'destructive' });
