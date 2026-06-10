@@ -56,7 +56,7 @@ const QUESTIONS_BANK = {
   ],
 };
 
-// ========== الخطوة الأولى: إنشاء الحساب (مع إرسال user_type) ==========
+// ========== الخطوة الأولى: البيانات الأساسية + رقم الهاتف + التحقق ==========
 const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -64,8 +64,8 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleNext = async () => {
-    if (!formData.fullName || !formData.email || !formData.password) {
-      toast({ title: t('error'), description: t('allFieldsRequired'), variant: 'destructive' });
+    if (!formData.fullName || !formData.email || !formData.phone || !formData.password) {
+      toast({ title: t('error'), description: 'جميع الحقول مطلوبة (الاسم، البريد، الهاتف، كلمة المرور)', variant: 'destructive' });
       return;
     }
     if (formData.password !== confirmPassword) {
@@ -75,14 +75,54 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
 
     setIsLoading(true);
 
-    // ✅ إرسال user_type مع البيانات
+    // ✅ التحقق من عدم وجود بريد إلكتروني أو رقم هاتف مسجل مسبقاً
+    // 1. التحقق من جدول technicians (للبحث عن بريد أو هاتف)
+    const { data: existingTech, error: techError } = await supabase
+      .from('technicians')
+      .select('id, email, phone')
+      .or(`email.eq.${formData.email},phone.eq.${formData.phone}`)
+      .maybeSingle();
+
+    if (techError) {
+      toast({ title: t('error'), description: 'حدث خطأ أثناء التحقق من البيانات', variant: 'destructive' });
+      setIsLoading(false);
+      return;
+    }
+
+    if (existingTech) {
+      if (existingTech.email === formData.email) {
+        toast({ title: t('error'), description: 'هذا البريد الإلكتروني مسجل بالفعل لفني آخر', variant: 'destructive' });
+      } else if (existingTech.phone === formData.phone) {
+        toast({ title: t('error'), description: 'رقم الهاتف هذا مسجل بالفعل لفني آخر', variant: 'destructive' });
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. التحقق من جدول auth.users (للتأكد من أن البريد غير مستخدم من قبل)
+    const { data: existingAuth, error: authCheckError } = await supabase
+      .from('auth.users')
+      .select('id')
+      .eq('email', formData.email)
+      .maybeSingle();
+
+    if (authCheckError) {
+      // قد لا يملك المستخدم صلاحية الوصول لجدول auth.users مباشرة، نتجاهل الخطأ ونعتمد على سياسة Supabase
+    } else if (existingAuth) {
+      toast({ title: t('error'), description: 'هذا البريد الإلكتروني مستخدم بالفعل. يرجى تسجيل الدخول أو استخدام بريد آخر.', variant: 'destructive' });
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. إنشاء المستخدم عبر Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
       options: {
         data: {
           full_name: formData.fullName,
-          user_type: 'technician', // هذا الحل المطلوب لتشغيل الـ Trigger
+          phone: formData.phone,
+          user_type: 'technician',
         },
       },
     });
@@ -94,7 +134,6 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
     }
 
     if (authData?.user) {
-      // تسجيل الدخول مباشرة بعد التسجيل
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
@@ -108,9 +147,8 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
 
       toast({ title: t('success'), description: 'تم إنشاء الحساب بنجاح!' });
       setIsLoading(false);
-      nextStep(); // الانتقال للخطوة التالية
+      nextStep();
     } else {
-      // حالة نادرة: user لم يرجع
       toast({ title: t('info'), description: t('checkEmailToConfirm') });
       setIsLoading(false);
     }
@@ -125,6 +163,10 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
       <div>
         <Label htmlFor="email">{t('email')}</Label>
         <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+      </div>
+      <div>
+        <Label htmlFor="phone">رقم الهاتف *</Label>
+        <Input id="phone" type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required placeholder="مثال: 01012345678" />
       </div>
       <div>
         <Label htmlFor="password">{t('password')}</Label>
@@ -178,7 +220,7 @@ const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   );
 };
 
-// ========== الخطوة الثالثة: رفع الملفات (مع التحقق من الجلسة) ==========
+// ========== الخطوة الثالثة: رفع الملفات ==========
 const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -196,7 +238,6 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
   );
   const [sessionChecked, setSessionChecked] = useState(false);
 
-  // التحقق من وجود جلسة صالحة قبل عرض أي شيء
   React.useEffect(() => {
     const checkSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -292,7 +333,8 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
   );
 };
 
-// ==================== الخطوة الرابعة: اختبار المهارات (أسئلة مفتوحة) ====================
+
+// ==================== الخطوة الرابعة: اختبار المهارات ====================
 const StepSkillAssessment = ({ formData, setFormData, prevStep, submitForm }) => {
   const { t } = useLanguage();
   const [currentDeviceIndex, setCurrentDeviceIndex] = useState(0);
@@ -402,6 +444,7 @@ const TechnicianRegistrationScreen = () => {
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
+    phone: '',
     password: '',
     selectedDevices: [],
     documents: {},
@@ -411,7 +454,6 @@ const TechnicianRegistrationScreen = () => {
   const nextStep = () => setStep(prev => prev + 1);
   const prevStep = () => setStep(prev => prev - 1);
 
-  // ✅ دالة submitForm تستخدم upsert لضمان الإدراج
   const submitForm = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -425,6 +467,7 @@ const TechnicianRegistrationScreen = () => {
         id: user.id,
         email: formData.email,
         full_name: formData.fullName,
+        phone: formData.phone,
         specialization: formData.selectedDevices[0] || '',
         skills: formData.selectedDevices.join(', '),
         documents: formData.documents,
