@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
-import { LogOut } from 'lucide-react';
+import { Input } from '@/components/ui/input.jsx';
+import { Label } from '@/components/ui/label.jsx';
+import { LogOut, MapPin } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
-
-import BalanceDisplay from '@/components/customer/BalanceDisplay.jsx';
-import MaintenanceRequestForm from '@/components/customer/MaintenanceRequestForm.jsx';
-import CustomerActionsGrid from '@/components/customer/CustomerActionsGrid.jsx';
-import AcceptedTechniciansList from '@/components/customer/AcceptedTechniciansList.jsx';
-import AddBalanceDialog from '@/components/customer/AddBalanceDialog.jsx';
-
-// استيراد Supabase
 import { supabase } from '@/lib/supabaseClient';
 
 const VISIT_FEE = 100;
@@ -25,84 +19,94 @@ const deviceTypes = [
   { value: 'airConditioner', labelKey: 'airConditioner' },
 ];
 
-const mockTechniciansData = [
-  { id: 1, name: "Ahmed Ali", rating: 4.5, skills: ['washingMachine', 'refrigerator'], photoKey: "technician1", distance: 10, acceptedRequests: [] },
-  { id: 2, name: "Fatima Hassan", rating: 4.8, skills: ['airConditioner'], photoKey: "technician2", distance: 5, acceptedRequests: [] },
-  { id: 3, name: "Youssef Ibrahim", rating: 4.2, skills: ['oven', 'heater'], photoKey: "technician3", distance: 25, acceptedRequests: [] },
-  { id: 4, name: "Sara Gamal", rating: 4.9, skills: ['washingMachine', 'oven'], photoKey: "technician4", distance: 15, acceptedRequests: [] },
-];
+// دالة حساب المسافة بين نقطتين (بالكيلومترات) - haversine
+const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // نصف قطر الأرض
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
 
 const CustomerHomeScreen = () => {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [currentUserEmail, setCurrentUserEmail] = useState('');
   const [customerBalance, setCustomerBalance] = useState(0);
-  const [maintenanceRequest, setMaintenanceRequest] = useState({ deviceType: '', issueDescription: '' });
+  const [maintenanceRequest, setMaintenanceRequest] = useState({
+    deviceType: '',
+    issueDescription: '',
+    phoneNumber: '',
+    lat: null,
+    lng: null,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [activeRequests, setActiveRequests] = useState([]);
-  const [displayedTechnicians, setDisplayedTechnicians] = useState([]);
-  const [isAddBalanceDialogOpen, setIsAddBalanceDialogOpen] = useState(false);
+  const [acceptedTechnicians, setAcceptedTechnicians] = useState([]);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
-  // useEffect الجديد: جلب بيانات المستخدم والرصيد من Supabase
   useEffect(() => {
     const fetchUserData = async () => {
-      // 1. الحصول على الجلسة الحالية من Supabase
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         navigate('/login/customer');
         return;
       }
-
       setCurrentUserEmail(user.email);
 
-      // 2. جلب الرصيد من جدول customers مباشرة
       const { data: customerData, error: balanceError } = await supabase
         .from('customers')
         .select('balance')
         .eq('id', user.id)
         .single();
-
       if (!balanceError && customerData) {
         setCustomerBalance(customerData.balance);
       } else {
         setCustomerBalance(0);
       }
 
-      // 3. جلب الطلبات النشطة (مؤقتاً من localStorage، سيتم تحويلها لاحقاً إلى Supabase)
-      const requests = JSON.parse(localStorage.getItem(`customerActiveRequests_${user.email}`)) || [];
-      setActiveRequests(requests);
+      // جلب الطلبات النشطة من Supabase
+      const { data: requests, error: reqError } = await supabase
+        .from('maintenance_requests')
+        .select('*, technician:technician_id ( id, full_name, phone, specialization, experience_years, lat, lng )')
+        .eq('customer_id', user.id)
+        .in('status', ['pending', 'accepted', 'on_the_way', 'in_progress'])
+        .order('created_at', { ascending: false });
+
+      if (!reqError) {
+        setActiveRequests(requests || []);
+      }
     };
 
     fetchUserData();
   }, [navigate]);
 
-  // تمت إزالة useEffect القديم الذي كان يزامن الرصيد مع localStorage
-
+  // تحديث قائمة الفنيين المقبولين (عندما يوجد طلب له technician_id)
   useEffect(() => {
-    if (currentUserEmail) {
-      localStorage.setItem(`customerActiveRequests_${currentUserEmail}`, JSON.stringify(activeRequests));
-      updateDisplayedTechnicians();
-    }
-  }, [activeRequests, language, t, currentUserEmail]);
-
-  const updateDisplayedTechnicians = () => {
-    const currentRequestId = activeRequests.length > 0 ? activeRequests[activeRequests.length - 1]?.id : null;
-    if (!currentRequestId) {
-      setDisplayedTechnicians([]);
-      return;
-    }
-
-    const technicians = mockTechniciansData
-      .filter(tech => tech.distance <= 20 && tech.acceptedRequests.includes(currentRequestId))
-      .map(tech => ({
-        ...tech,
-        name: tech.name,
-        skills: tech.skills.map(skill => t(skill))
-      }));
-    setDisplayedTechnicians(technicians);
-  };
+    const techs = activeRequests
+      .filter(req => req.technician && req.technician.full_name)
+      .map(req => {
+        const tech = req.technician;
+        let distance = null;
+        if (req.lat && req.lng && tech.lat && tech.lng) {
+          distance = getDistanceFromLatLonInKm(req.lat, req.lng, tech.lat, tech.lng);
+        }
+        return {
+          id: tech.id,
+          name: tech.full_name,
+          phone: tech.phone,
+          specialization: tech.specialization,
+          experienceYears: tech.experience_years,
+          distance,
+        };
+      });
+    setAcceptedTechnicians(techs);
+  }, [activeRequests]);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -110,18 +114,43 @@ const CustomerHomeScreen = () => {
     navigate('/user-type');
   };
 
-  const handleMaintenanceRequestFieldChange = (field, value) => {
+  const handleFieldChange = (field, value) => {
     setMaintenanceRequest(prev => ({ ...prev, [field]: value }));
   };
 
-  // دالة إنشاء طلب الصيانة (معدلة لخصم الرصيد من Supabase)
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      toast({ title: t('error'), description: 'متصفحك لا يدعم تحديد الموقع', variant: 'destructive' });
+      return;
+    }
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setMaintenanceRequest(prev => ({
+          ...prev,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }));
+        setGettingLocation(false);
+        toast({ title: t('success'), description: 'تم تحديد موقعك بنجاح' });
+      },
+      (error) => {
+        toast({ title: t('error'), description: 'فشل تحديد الموقع: ' + error.message, variant: 'destructive' });
+        setGettingLocation(false);
+      }
+    );
+  };
+
   const handleCreateMaintenanceRequest = async () => {
-    if (!maintenanceRequest.deviceType || !maintenanceRequest.issueDescription) {
-      toast({ title: t('error'), description: t('allFieldsRequired'), variant: 'destructive' });
+    if (!maintenanceRequest.deviceType || !maintenanceRequest.issueDescription || !maintenanceRequest.phoneNumber) {
+      toast({ title: t('error'), description: 'جميع الحقول مطلوبة (الجهاز، الوصف، رقم الهاتف)', variant: 'destructive' });
+      return;
+    }
+    if (maintenanceRequest.lat == null || maintenanceRequest.lng == null) {
+      toast({ title: t('error'), description: 'يرجى تحديد موقعك أولاً', variant: 'destructive' });
       return;
     }
 
-    // جلب المستخدم الحقيقي من Supabase
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
       toast({ title: t('error'), description: 'يجب تسجيل الدخول', variant: 'destructive' });
@@ -130,32 +159,26 @@ const CustomerHomeScreen = () => {
 
     setIsLoading(true);
 
-    // التحقق من الرصيد
     if (customerBalance < VISIT_FEE) {
       toast({ title: t('error'), description: t('insufficientBalance'), variant: 'destructive' });
       setIsLoading(false);
       return;
     }
 
-    // خصم الرصيد محلياً (لتحديث الواجهة فوراً)
     setCustomerBalance(prev => prev - VISIT_FEE);
-
-    // خصم الرصيد من قاعدة البيانات
     const { error: deductError } = await supabase
       .from('customers')
       .update({ balance: customerBalance - VISIT_FEE })
       .eq('id', user.id);
+    if (deductError) console.error('فشل خصم الرصيد:', deductError);
 
-    if (deductError) {
-      console.error('فشل خصم الرصيد من قاعدة البيانات:', deductError);
-      // يمكن إعادة الرصيد المحلي أو إشعار المستخدم
-    }
-
-    // تجهيز الطلب وإرساله إلى Supabase
     const newRequest = {
       customer_id: user.id,
       device_type: maintenanceRequest.deviceType,
       issue_description: maintenanceRequest.issueDescription,
+      phone_number: maintenanceRequest.phoneNumber,
+      lat: maintenanceRequest.lat,
+      lng: maintenanceRequest.lng,
       status: 'pending',
       created_at: new Date().toISOString(),
     };
@@ -166,112 +189,93 @@ const CustomerHomeScreen = () => {
       .select();
 
     if (error) {
-      console.error('Error creating request:', error);
-      toast({ title: t('error'), description: 'فشل في إرسال الطلب', variant: 'destructive' });
+      toast({ title: t('error'), description: 'فشل إنشاء الطلب: ' + error.message, variant: 'destructive' });
       setIsLoading(false);
       return;
     }
 
-    // نجاح
     toast({ title: t('success'), description: 'تم إرسال الطلب للفنيين القريبين!' });
-    setMaintenanceRequest({ deviceType: '', issueDescription: '' });
-
-    // إضافة الطلب محليًا (كي يظهر فورًا في القائمة)
+    setMaintenanceRequest({ deviceType: '', issueDescription: '', phoneNumber: '', lat: null, lng: null });
     if (data && data[0]) {
-      setActiveRequests(prev => [...prev, data[0]]);
+      setActiveRequests(prev => [data[0], ...prev]);
     }
-
     setIsLoading(false);
   };
 
-  const handleOpenAddBalanceDialog = () => setIsAddBalanceDialogOpen(true);
+  const handleOpenAddBalanceDialog = () => {}; // سنبقيها فارغة أو يمكننا إضافة النافذة لاحقاً
 
-  // دالة الشحن الجديدة (ترسل طلب شحن بدلاً من إضافة الرصيد مباشرة)
-  const handleConfirmTransfer = (method, amount, source, screenshot) => {
-    setIsAddBalanceDialogOpen(false);
-
-    const transferData = {
-      method,
-      amount,
-      source,
-      screenshotName: screenshot ? screenshot.name : 'N/A',
-      userEmail: currentUserEmail,
-      timestamp: new Date().toISOString(),
-    };
-
-    // حفظ نسخة مؤقتة محلياً (اختياري)
-    const pendingTransfers = JSON.parse(localStorage.getItem('pendingTransfers')) || [];
-    pendingTransfers.push(transferData);
-    localStorage.setItem('pendingTransfers', JSON.stringify(pendingTransfers));
-
-    // إرسال طلب الشحن إلى جدول recharge_requests في Supabase
-    const insertRechargeRequest = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({ title: t('error'), description: 'يجب تسجيل الدخول لطلب الشحن', variant: 'destructive' });
-        return;
-      }
-
-      const { error } = await supabase.from('recharge_requests').insert([{
-        user_id: user.id,
-        email: currentUserEmail,
-        amount: amount,
-        phone_number: source,
-        screenshot_path: screenshot ? screenshot.name : null,
-        status: 'pending'
-      }]);
-
-      if (error) {
-        console.error('خطأ في إرسال طلب الشحن:', error);
-        toast({ title: t('error'), description: 'فشل إرسال طلب الشحن', variant: 'destructive' });
-      } else {
-        toast({ title: t('success'), description: 'تم إرسال طلب الشحن للمراجعة. سيتم إضافة الرصيد بعد الموافقة.' });
-      }
-    };
-
-    insertRechargeRequest();
-  };
+  const handleConfirmTransfer = () => {}; // مؤقت
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
       className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5"
-      key={language}
     >
       <header className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-primary">{t('customer')} {t('home')}</h1>
-        <Button variant="ghost" onClick={handleLogout} className="text-destructive hover:bg-destructive/10">
+        <Button variant="ghost" onClick={handleLogout} className="text-destructive">
           <LogOut className="ltr:mr-2 rtl:ml-2 h-5 w-5" /> {t('logout')}
         </Button>
       </header>
 
-      <BalanceDisplay
-        customerBalance={customerBalance}
-        onAddFundsClick={handleOpenAddBalanceDialog}
-        t={t}
-      />
+      <div className="bg-card rounded-xl p-6 shadow-md mb-8">
+        <h2 className="text-2xl font-semibold mb-4">طلب صيانة جديد</h2>
+        <div className="space-y-4">
+          <div>
+            <Label>نوع الجهاز</Label>
+            <select
+              value={maintenanceRequest.deviceType}
+              onChange={(e) => handleFieldChange('deviceType', e.target.value)}
+              className="w-full rounded-md border border-input bg-background/70 px-3 py-2 text-sm"
+            >
+              <option value="">اختر الجهاز</option>
+              {deviceTypes.map(d => (
+                <option key={d.value} value={d.value}>{t(d.labelKey)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>وصف العطل</Label>
+            <Input value={maintenanceRequest.issueDescription} onChange={(e) => handleFieldChange('issueDescription', e.target.value)} />
+          </div>
+          <div>
+            <Label>رقم الهاتف للتواصل</Label>
+            <Input value={maintenanceRequest.phoneNumber} onChange={(e) => handleFieldChange('phoneNumber', e.target.value)} placeholder="01xxxxxxxxx" />
+          </div>
+          <div>
+            <Label>موقعك الحالي</Label>
+            <div className="flex gap-2 items-center">
+              <Button variant="outline" onClick={handleGetLocation} disabled={gettingLocation}>
+                <MapPin size={16} className="ltr:mr-2 rtl:ml-2" />
+                {gettingLocation ? 'جاري التحديد...' : 'تحديد موقعي'}
+              </Button>
+              {maintenanceRequest.lat != null && (
+                <span className="text-green-500 text-sm">✓ تم تحديد الموقع</span>
+              )}
+            </div>
+          </div>
+          <Button onClick={handleCreateMaintenanceRequest} disabled={isLoading} className="w-full">
+            {isLoading ? 'جاري الإرسال...' : `إرسال الطلب (رسوم الكشف: ${VISIT_FEE} جنيه)`}
+          </Button>
+        </div>
+      </div>
 
-      <MaintenanceRequestForm
-        maintenanceRequest={maintenanceRequest}
-        onFieldChange={handleMaintenanceRequestFieldChange}
-        onSubmit={handleCreateMaintenanceRequest}
-        isLoading={isLoading}
-        t={t}
-        deviceTypes={deviceTypes}
-        visitFee={VISIT_FEE}
-      />
-
-      <CustomerActionsGrid t={t} />
-
-      <AcceptedTechniciansList technicians={displayedTechnicians} t={t} />
-
-      <AddBalanceDialog
-        open={isAddBalanceDialogOpen}
-        onOpenChange={setIsAddBalanceDialogOpen}
-        onConfirmTransfer={handleConfirmTransfer}
-      />
+      {acceptedTechnicians.length > 0 && (
+        <div className="bg-card rounded-xl p-6 shadow-md mb-8">
+          <h2 className="text-2xl font-semibold mb-4">الفنيون المقبولون لطلبك</h2>
+          {acceptedTechnicians.map((tech, idx) => (
+            <div key={idx} className="border rounded-lg p-3 mb-2">
+              <p className="font-bold">{tech.name}</p>
+              {tech.specialization && <p className="text-sm">التخصص: {tech.specialization}</p>}
+              {tech.distance != null && (
+                <p className="text-sm">المسافة: {tech.distance.toFixed(1)} كم</p>
+              )}
+              {tech.phone && <p className="text-sm">رقم الهاتف: {tech.phone}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 };
