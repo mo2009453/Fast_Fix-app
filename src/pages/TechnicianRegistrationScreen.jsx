@@ -1,155 +1,133 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useLanguage } from '@/contexts/LanguageContext.jsx';
+import { supabase } from '@/lib/supabaseClient';
+import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
-import { useLanguage } from '@/contexts/LanguageContext.jsx';
-import { useNavigate, Link } from 'react-router-dom';
-import { useToast } from '@/components/ui/use-toast.jsx';
-import { supabase } from '@/lib/supabaseClient';
-import { Wrench, LogIn } from 'lucide-react';
+import { Wrench, ChevronRight, ChevronLeft, CheckCircle } from 'lucide-react';
+
+// مكون الخطوة الأولى: البيانات الأساسية
+const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
+  const { t } = useLanguage();
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const handleNext = () => {
+    if (!formData.fullName || !formData.email || !formData.password) {
+      alert(t('allFieldsRequired'));
+      return;
+    }
+    if (formData.password !== confirmPassword) {
+      alert(t('passwordsDoNotMatch'));
+      return;
+    }
+    nextStep();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+      <div>
+        <Label htmlFor="fullName">{t('fullName')}</Label>
+        <Input id="fullName" value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} required />
+      </div>
+      <div>
+        <Label htmlFor="email">{t('email')}</Label>
+        <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+      </div>
+      <div>
+        <Label htmlFor="password">{t('password')}</Label>
+        <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required />
+      </div>
+      <div>
+        <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
+        <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+      </div>
+      <div className="flex justify-end">
+        <Button onClick={handleNext} className="gap-2">{t('next')} <ChevronRight size={16} /></Button>
+      </div>
+    </motion.div>
+  );
+};
+
+// مكونات الخطوات التالية (وهمية حالياً)
+const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
+    <h2 className="text-xl font-bold mb-4">اختيار الأجهزة</h2>
+    <p>هنا سيتم اختيار الأجهزة من القائمة المنسدلة (سيتم بناؤها في المرحلة التالية).</p>
+    <div className="flex justify-between mt-6">
+      <Button variant="outline" onClick={prevStep}><ChevronLeft size={16} /> {('previous')}</Button>
+      <Button onClick={nextStep}>{('next')} <ChevronRight size={16} /></Button>
+    </div>
+  </motion.div>
+);
+
+const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
+    <h2 className="text-xl font-bold mb-4">رفع الملفات</h2>
+    <p>هنا سيتم رفع البطاقة والفيش الجنائي (سيتم بناؤها لاحقاً).</p>
+    <div className="flex justify-between mt-6">
+      <Button variant="outline" onClick={prevStep}><ChevronLeft size={16} /> {('previous')}</Button>
+      <Button onClick={submitForm}>{('submit')} <CheckCircle size={16} /></Button>
+    </div>
+  </motion.div>
+);
 
 const TechnicianRegistrationScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [step, setStep] = useState(0);
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    selectedDevices: [],
+    documents: {}
+  });
 
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const [specialization, setSpecialization] = useState('');
-  const [skills, setSkills] = useState('');
-  const [experienceYears, setExperienceYears] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const nextStep = () => setStep(prev => prev + 1);
+  const prevStep = () => setStep(prev => prev - 1);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!fullName || !email || !password || !confirmPassword || !phone || !specialization) {
-      toast({ title: t('error'), description: t('allFieldsRequired'), variant: 'destructive' });
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      toast({ title: t('error'), description: t('passwordsDoNotMatch'), variant: 'destructive' });
-      return;
-    }
-
-    setIsLoading(true);
-
-    // 1. إنشاء المستخدم عبر Supabase Auth مع metadata
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: email,
-      password: password,
-      options: {
-        data: {
-          full_name: fullName,
-          user_type: 'technician', // هذا مهم لتشغيل الـ Trigger
-        },
-      },
-    });
-
-    if (authError) {
-      toast({ title: t('error'), description: authError.message, variant: 'destructive' });
-      setIsLoading(false);
-      return;
-    }
-
-    if (authData?.user) {
-      // 2. تحديث الصف الذي أنشأه الـ Trigger بالمعلومات الإضافية
-      const { error: updateError } = await supabase
-        .from('technicians')
-        .update({
-          phone: phone,
-          specialization: specialization,
-          skills: skills,
-          experience_years: parseInt(experienceYears) || 0,
-          email: email, // يتأكد من تعبئة الإيميل
-        })
-        .eq('id', authData.user.id);
-
-      if (updateError) {
-        console.error('تحديث بيانات الفني فشل:', updateError);
-      }
-
-      toast({ title: t('success'), description: 'تم تسجيل الفني بنجاح!' });
-      navigate('/login/technician');
-    } else {
-      toast({ title: t('info'), description: t('checkEmailToConfirm') });
-    }
-
-    setIsLoading(false);
+  const submitForm = async () => {
+    // سيتم بناء هذه الدالة بالكامل في المراحل القادمة
+    toast({ title: t('success'), description: 'عملية التسجيل قيد الإنشاء.' });
+    // navigate('/login/technician');
   };
 
+  const steps = [
+    { title: 'البيانات الأساسية', component: StepBasicInfo },
+    { title: 'الأجهزة', component: StepDeviceSelection },
+    { title: 'الملفات', component: StepDocumentUpload },
+  ];
+
+  const CurrentStepComponent = steps[step].component;
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.5 }}
-      className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-background via-secondary/20 to-background"
-    >
-      <div className="w-full max-w-md shadow-2xl glassmorphism-card rounded-xl p-6 bg-card">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-secondary/20 to-background">
+      <div className="w-full max-w-md bg-card rounded-xl shadow-2xl p-6">
         <div className="text-center mb-6">
           <Wrench size={48} className="mx-auto mb-4 text-primary" />
-          <h1 className="text-3xl font-bold text-primary">
-            {t('register')} - {t('technician')}
-          </h1>
-          <p className="text-muted-foreground">
-            سجل كفني لتبدأ في استقبال طلبات الصيانة
-          </p>
+          <h1 className="text-2xl font-bold">{t('register')} - {t('technician')}</h1>
+          {/* مؤشر الخطوات */}
+          <div className="flex justify-center mt-4 space-x-2 rtl:space-x-reverse">
+            {steps.map((s, index) => (
+              <div key={index} className={`h-2 w-16 rounded-full ${index <= step ? 'bg-primary' : 'bg-gray-300'}`} />
+            ))}
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">{steps[step].title}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="fullName">{t('fullName')}</Label>
-            <Input id="fullName" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="email">{t('email')}</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="phone">{t('phone')}</Label>
-            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="specialization">التخصص الرئيسي</Label>
-            <Input id="specialization" value={specialization} onChange={(e) => setSpecialization(e.target.value)} placeholder="مثلاً: غسالات" required className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="skills">المهارات الأخرى</Label>
-            <Input id="skills" value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="مثلاً: ثلاجات، مكيفات" className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="experience">سنوات الخبرة</Label>
-            <Input id="experience" type="number" value={experienceYears} onChange={(e) => setExperienceYears(e.target.value)} className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="password">{t('password')}</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="bg-background/70" />
-          </div>
-          <div>
-            <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
-            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="bg-background/70" />
-          </div>
-          <Button type="submit" className="w-full text-lg py-3 bg-gradient-to-r from-primary to-purple-600" disabled={isLoading}>
-            {isLoading ? t('loading') : t('register')}
-          </Button>
-        </form>
-
-        <div className="mt-4 text-center">
-          <Button variant="link" asChild className="text-accent hover:underline">
-            <Link to="/login/technician">
-              <LogIn className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              {t('alreadyHaveAccount', 'لديك حساب بالفعل؟ تسجيل الدخول')}
-            </Link>
-          </Button>
-        </div>
+        <CurrentStepComponent 
+          formData={formData} 
+          setFormData={setFormData} 
+          nextStep={nextStep} 
+          prevStep={prevStep} 
+          submitForm={submitForm} 
+        />
       </div>
-    </motion.div>
+    </div>
   );
 };
 
