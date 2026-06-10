@@ -1,169 +1,156 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabaseClient";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button.jsx';
+import { Input } from '@/components/ui/input.jsx';
+import { Label } from '@/components/ui/label.jsx';
+import { useLanguage } from '@/contexts/LanguageContext.jsx';
+import { useNavigate, Link } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast.jsx';
+import { supabase } from '@/lib/supabaseClient';
+import { Wrench, LogIn } from 'lucide-react';
 
-const DEVICE_OPTIONS = ["غسالة", "ثلاجة", "مكيف", "سخان", "بوتاجاز"];
-
-export default function TechnicianRegistrationScreen() {
+const TechnicianRegistrationScreen = () => {
+  const { t } = useLanguage();
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: "",
-    email: "",
-    password: "",
-    phone: "",
-    devices: [],
-    nationalIdImage: null,
-    certificateImage: null,
-  });
+  const { toast } = useToast();
 
-  const handleNextStep = () => setStep(2);
-  const handlePrevStep = () => setStep(1);
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [specialization, setSpecialization] = useState('');
+  const [skills, setSkills] = useState('');
+  const [experienceYears, setExperienceYears] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const handleDeviceSelect = (device) => {
-    setFormData(prev => {
-      const newDevices = prev.devices.includes(device)
-        ? prev.devices.filter(d => d !== device)
-        : [...prev.devices, device];
-      return { ...prev, devices: newDevices };
-    });
-  };
-
-  const handleFileChange = (field, file) => {
-    setFormData(prev => ({ ...prev, [field]: file }));
-  };
-
-  const uploadFile = async (file, path) => {
-    const { data, error } = await supabase.storage
-      .from("technician_files")
-      .upload(path, file, { upsert: true });
-    if (error) throw error;
-    return data.path;
-  };
-
-  const handleSubmit = async () => {
-    setLoading(true);
-    try {
-      const nationalIdPath = await uploadFile(
-        formData.nationalIdImage,
-        `national_ids/${Date.now()}_${formData.nationalIdImage.name}`
-      );
-      const certificatePath = await uploadFile(
-        formData.certificateImage,
-        `certificates/${Date.now()}_${formData.certificateImage.name}`
-      );
-
-      const { error } = await supabase.from("technicians_pending").insert({
-        full_name: formData.fullName,
-        email: formData.email,
-        password: formData.password,
-        phone: formData.phone,
-        devices: formData.devices,
-        national_id_image: nationalIdPath,
-        certificate_image: certificatePath,
-        status: "pending",
-      });
-
-      if (error) throw error;
-
-      navigate("/technician-pending-review");
-    } catch (err) {
-      console.error(err);
-      alert("حدث خطأ أثناء التسجيل. حاول مرة أخرى.");
+    if (!fullName || !email || !password || !confirmPassword || !phone || !specialization) {
+      toast({ title: t('error'), description: t('allFieldsRequired'), variant: 'destructive' });
+      return;
     }
-    setLoading(false);
+
+    if (password !== confirmPassword) {
+      toast({ title: t('error'), description: t('passwordsDoNotMatch'), variant: 'destructive' });
+      return;
+    }
+
+    setIsLoading(true);
+
+    // 1. إنشاء المستخدم عبر Supabase Auth مع metadata
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: email,
+      password: password,
+      options: {
+        data: {
+          full_name: fullName,
+          user_type: 'technician', // هذا مهم لتشغيل الـ Trigger
+        },
+      },
+    });
+
+    if (authError) {
+      toast({ title: t('error'), description: authError.message, variant: 'destructive' });
+      setIsLoading(false);
+      return;
+    }
+
+    if (authData?.user) {
+      // 2. تحديث الصف الذي أنشأه الـ Trigger بالمعلومات الإضافية
+      const { error: updateError } = await supabase
+        .from('technicians')
+        .update({
+          phone: phone,
+          specialization: specialization,
+          skills: skills,
+          experience_years: parseInt(experienceYears) || 0,
+          email: email, // يتأكد من تعبئة الإيميل
+        })
+        .eq('id', authData.user.id);
+
+      if (updateError) {
+        console.error('تحديث بيانات الفني فشل:', updateError);
+      }
+
+      toast({ title: t('success'), description: 'تم تسجيل الفني بنجاح!' });
+      navigate('/login/technician');
+    } else {
+      toast({ title: t('info'), description: t('checkEmailToConfirm') });
+    }
+
+    setIsLoading(false);
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10">
-      <Card>
-        <CardContent className="space-y-4 pt-6">
-          {step === 1 ? (
-            <>
-              <h2 className="text-xl font-bold text-center mb-2">تسجيل فني - الخطوة 1</h2>
-              <Input
-                placeholder="الاسم الكامل"
-                value={formData.fullName}
-                onChange={e => handleChange("fullName", e.target.value)}
-              />
-              <Input
-                placeholder="البريد الإلكتروني"
-                value={formData.email}
-                onChange={e => handleChange("email", e.target.value)}
-              />
-              <Input
-                type="password"
-                placeholder="كلمة المرور"
-                value={formData.password}
-                onChange={e => handleChange("password", e.target.value)}
-              />
-              <Input
-                placeholder="رقم الهاتف"
-                value={formData.phone}
-                onChange={e => handleChange("phone", e.target.value)}
-              />
-              <div>
-                <label className="block mb-1 font-medium">الأجهزة المتخصصة</label>
-                <div className="flex flex-wrap gap-2">
-                  {DEVICE_OPTIONS.map(device => (
-                    <button
-                      type="button"
-                      key={device}
-                      onClick={() => handleDeviceSelect(device)}
-                      className={`px-3 py-1 rounded border ${
-                        formData.devices.includes(device)
-                          ? "bg-blue-600 text-white"
-                          : "bg-white"
-                      }`}
-                    >
-                      {device}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Button onClick={handleNextStep} className="w-full mt-4">
-                التالي
-              </Button>
-            </>
-          ) : (
-            <>
-              <h2 className="text-xl font-bold text-center mb-2">تسجيل فني - الخطوة 2</h2>
-              <div>
-                <label className="block mb-1 font-medium">صورة الهوية الوطنية</label>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={e => handleFileChange("nationalIdImage", e.target.files[0])}
-                />
-              </div>
-              <div>
-                <label className="block mb-1 font-medium">شهادة الخبرة</label>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={e => handleFileChange("certificateImage", e.target.files[0])}
-                />
-              </div>
-              <div className="flex gap-2 mt-4">
-                <Button variant="outline" onClick={handlePrevStep} className="w-1/2">
-                  رجوع
-                </Button>
-                <Button onClick={handleSubmit} className="w-1/2" disabled={loading}>
-                  {loading ? "جارٍ التسجيل..." : "تسجيل"}
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.5 }}
+      className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-background via-secondary/20 to-background"
+    >
+      <div className="w-full max-w-md shadow-2xl glassmorphism-card rounded-xl p-6 bg-card">
+        <div className="text-center mb-6">
+          <Wrench size={48} className="mx-auto mb-4 text-primary" />
+          <h1 className="text-3xl font-bold text-primary">
+            {t('register')} - {t('technician')}
+          </h1>
+          <p className="text-muted-foreground">
+            سجل كفني لتبدأ في استقبال طلبات الصيانة
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="fullName">{t('fullName')}</Label>
+            <Input id="fullName" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="email">{t('email')}</Label>
+            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="phone">{t('phone')}</Label>
+            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="specialization">التخصص الرئيسي</Label>
+            <Input id="specialization" value={specialization} onChange={(e) => setSpecialization(e.target.value)} placeholder="مثلاً: غسالات" required className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="skills">المهارات الأخرى</Label>
+            <Input id="skills" value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="مثلاً: ثلاجات، مكيفات" className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="experience">سنوات الخبرة</Label>
+            <Input id="experience" type="number" value={experienceYears} onChange={(e) => setExperienceYears(e.target.value)} className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="password">{t('password')}</Label>
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="bg-background/70" />
+          </div>
+          <div>
+            <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
+            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="bg-background/70" />
+          </div>
+          <Button type="submit" className="w-full text-lg py-3 bg-gradient-to-r from-primary to-purple-600" disabled={isLoading}>
+            {isLoading ? t('loading') : t('register')}
+          </Button>
+        </form>
+
+        <div className="mt-4 text-center">
+          <Button variant="link" asChild className="text-accent hover:underline">
+            <Link to="/login/technician">
+              <LogIn className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
+              {t('alreadyHaveAccount', 'لديك حساب بالفعل؟ تسجيل الدخول')}
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </motion.div>
   );
-}
+};
+
+export default TechnicianRegistrationScreen;
