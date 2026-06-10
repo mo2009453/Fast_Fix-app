@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label.jsx';
 import { Wrench, ChevronRight, ChevronLeft, CheckCircle } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect.jsx';
 
-// الخطوة الأولى: البيانات الأساسية
+// ====== الخطوة الأولى: البيانات الأساسية ======
 const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   const { t } = useLanguage();
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -52,7 +52,7 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   );
 };
 
-// الخطوة الثانية: اختيار الأجهزة (حقيقية)
+// ====== الخطوة الثانية: اختيار الأجهزة ======
 const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   const { t } = useLanguage();
 
@@ -93,19 +93,112 @@ const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   );
 };
 
-// الخطوة الثالثة: رفع الملفات (مؤقتة)
-const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => (
-  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-    <h2 className="text-xl font-bold mb-4">رفع الملفات</h2>
-    <p>هنا سيتم رفع البطاقة والفيش الجنائي (سيتم بناؤها لاحقاً).</p>
-    <div className="flex justify-between mt-6">
-      <Button variant="outline" onClick={prevStep}><ChevronLeft size={16} /> {('previous')}</Button>
-      <Button onClick={submitForm}>{('submit')} <CheckCircle size={16} /></Button>
-    </div>
-  </motion.div>
-);
+// ====== الخطوة الثالثة: رفع الملفات (حقيقية الآن) ======
+const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => {
+  const { t } = useLanguage();
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(null); // اسم الحقل الجاري رفعه
+  const [uploadedFiles, setUploadedFiles] = useState({
+    nationalIdFront: null,
+    nationalIdBack: null,
+    criminalRecord: null,
+    certificates: [],
+  });
 
-// المكون الرئيسي
+  const handleFileUpload = async (fileType, file) => {
+    if (!file) return;
+
+    setUploading(fileType);
+    
+    // تجهيز اسم فريد للملف
+    const fileName = `${Date.now()}_${file.name}`;
+    const filePath = `${formData.email || 'unknown'}/${fileType}/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('technician-documents')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      toast({ title: t('error'), description: `فشل رفع ${fileType}: ${error.message}`, variant: 'destructive' });
+      setUploading(null);
+      return;
+    }
+
+    // تحديث الحالة المحلية حسب نوع الملف
+    setUploadedFiles(prev => ({
+      ...prev,
+      [fileType]: fileType === 'certificates' ? [...prev.certificates, data.path] : data.path,
+    }));
+
+    setUploading(null);
+    toast({ title: t('success'), description: `تم رفع ${fileType} بنجاح` });
+  };
+
+  const handleFinalSubmit = () => {
+    if (!uploadedFiles.nationalIdFront || !uploadedFiles.nationalIdBack || !uploadedFiles.criminalRecord) {
+      toast({ title: t('error'), description: 'يجب رفع صورة البطاقة (وجهين) والفيش الجنائي', variant: 'destructive' });
+      return;
+    }
+
+    // دمج مسارات الملفات مع formData
+    setFormData({
+      ...formData,
+      documents: uploadedFiles,
+    });
+
+    submitForm(); // استدعاء دالة الإرسال النهائية (ستبنى لاحقاً)
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <h2 className="text-xl font-bold text-center">رفع المستندات المطلوبة</h2>
+      <p className="text-sm text-muted-foreground text-center">يجب رفع المستندات التالية للمراجعة</p>
+
+      <div>
+        <Label>صورة البطاقة (وجه أمامي) *</Label>
+        <Input type="file" accept="image/*" onChange={(e) => handleFileUpload('nationalIdFront', e.target.files[0])} disabled={uploading === 'nationalIdFront'} />
+        {uploadedFiles.nationalIdFront && <span className="text-green-500 text-xs">✓ تم الرفع</span>}
+      </div>
+
+      <div>
+        <Label>صورة البطاقة (وجه خلفي) *</Label>
+        <Input type="file" accept="image/*" onChange={(e) => handleFileUpload('nationalIdBack', e.target.files[0])} disabled={uploading === 'nationalIdBack'} />
+        {uploadedFiles.nationalIdBack && <span className="text-green-500 text-xs">✓ تم الرفع</span>}
+      </div>
+
+      <div>
+        <Label>الفيش الجنائي *</Label>
+        <Input type="file" accept="image/*,.pdf" onChange={(e) => handleFileUpload('criminalRecord', e.target.files[0])} disabled={uploading === 'criminalRecord'} />
+        {uploadedFiles.criminalRecord && <span className="text-green-500 text-xs">✓ تم الرفع</span>}
+      </div>
+
+      <div>
+        <Label>شهادات الخبرة (اختياري)</Label>
+        <Input type="file" accept="image/*,.pdf" multiple onChange={async (e) => {
+          const files = Array.from(e.target.files);
+          for (const file of files) {
+            await handleFileUpload('certificates', file);
+          }
+        }} disabled={uploading === 'certificates'} />
+        {uploadedFiles.certificates.length > 0 && (
+          <span className="text-green-500 text-xs">✓ تم رفع {uploadedFiles.certificates.length} ملفات</span>
+        )}
+      </div>
+
+      <div className="flex justify-between mt-6">
+        <Button variant="outline" onClick={prevStep}><ChevronLeft size={16} /> {t('previous')}</Button>
+        <Button onClick={handleFinalSubmit} disabled={uploading !== null}>
+          {t('submit')} <CheckCircle size={16} />
+        </Button>
+      </div>
+    </motion.div>
+  );
+};
+
+// ====== المكون الرئيسي (الحاوية) ======
 const TechnicianRegistrationScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -116,14 +209,14 @@ const TechnicianRegistrationScreen = () => {
     email: '',
     password: '',
     selectedDevices: [],
-    documents: {}
+    documents: {},
   });
 
   const nextStep = () => setStep(prev => prev + 1);
   const prevStep = () => setStep(prev => prev - 1);
 
   const submitForm = async () => {
-    // سيتم بناء هذه الدالة بالكامل في المراحل القادمة
+    // هذه الدالة ستكتمل في المرحلة الأخيرة (حفظ كل البيانات بقاعدة البيانات)
     toast({ title: t('success'), description: 'عملية التسجيل قيد الإنشاء.' });
   };
 
