@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { supabase } from '@/lib/supabaseClient';
@@ -56,7 +56,7 @@ const QUESTIONS_BANK = {
   ],
 };
 
-// ========== الخطوة الأولى: إنشاء الحساب ==========
+// ========== الخطوة الأولى: إنشاء الحساب (مع إرسال user_type) ==========
 const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -75,10 +75,16 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
 
     setIsLoading(true);
 
+    // ✅ إرسال user_type مع البيانات
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
-      options: { data: { full_name: formData.fullName, user_type: 'technician' } },
+      options: {
+        data: {
+          full_name: formData.fullName,
+          user_type: 'technician', // هذا الحل المطلوب لتشغيل الـ Trigger
+        },
+      },
     });
 
     if (authError) {
@@ -88,6 +94,7 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
     }
 
     if (authData?.user) {
+      // تسجيل الدخول مباشرة بعد التسجيل
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
@@ -101,8 +108,9 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
 
       toast({ title: t('success'), description: 'تم إنشاء الحساب بنجاح!' });
       setIsLoading(false);
-      nextStep();
+      nextStep(); // الانتقال للخطوة التالية
     } else {
+      // حالة نادرة: user لم يرجع
       toast({ title: t('info'), description: t('checkEmailToConfirm') });
       setIsLoading(false);
     }
@@ -170,7 +178,7 @@ const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   );
 };
 
-// ========== الخطوة الثالثة: رفع الملفات ==========
+// ========== الخطوة الثالثة: رفع الملفات (مع التحقق من الجلسة) ==========
 const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -188,8 +196,8 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
   );
   const [sessionChecked, setSessionChecked] = useState(false);
 
-  // التحقق من الجلسة عند تحميل المكون
-  useEffect(() => {
+  // التحقق من وجود جلسة صالحة قبل عرض أي شيء
+  React.useEffect(() => {
     const checkSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -206,8 +214,8 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
     if (!file) return;
     setUploading(fileType);
 
-    const { data: { user }, error: sessionError } = await supabase.auth.getUser();
-    if (sessionError || !user) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
       toast({ title: t('error'), description: 'يجب تسجيل الدخول أولاً', variant: 'destructive' });
       setUploading(null);
       return;
@@ -244,13 +252,8 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
     nextStep();
   };
 
-  // إذا لم يتم التحقق من الجلسة بعد، نعرض رسالة تحميل
   if (!sessionChecked) {
-    return (
-      <div className="flex justify-center items-center h-32">
-        <p className="text-muted-foreground">جارٍ التحقق من الجلسة...</p>
-      </div>
-    );
+    return <div className="flex justify-center items-center h-32"><p>جارٍ التحقق من الجلسة...</p></div>;
   }
 
   return (
@@ -408,6 +411,7 @@ const TechnicianRegistrationScreen = () => {
   const nextStep = () => setStep(prev => prev + 1);
   const prevStep = () => setStep(prev => prev - 1);
 
+  // ✅ دالة submitForm تستخدم upsert لضمان الإدراج
   const submitForm = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -417,18 +421,20 @@ const TechnicianRegistrationScreen = () => {
 
     const { error } = await supabase
       .from('technicians')
-      .update({
+      .upsert({
+        id: user.id,
         email: formData.email,
+        full_name: formData.fullName,
         specialization: formData.selectedDevices[0] || '',
         skills: formData.selectedDevices.join(', '),
         documents: formData.documents,
         skill_assessment: formData.skillAssessment,
         is_available: false,
         status: 'pending_review',
-      })
-      .eq('id', user.id);
+      }, { onConflict: 'id' });
 
     if (error) {
+      console.error('فشل حفظ البيانات:', error);
       toast({ title: t('error'), description: 'فشل حفظ البيانات: ' + error.message, variant: 'destructive' });
       return;
     }
