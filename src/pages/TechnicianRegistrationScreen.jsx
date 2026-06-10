@@ -10,21 +10,66 @@ import { Label } from '@/components/ui/label.jsx';
 import { Wrench, ChevronRight, ChevronLeft, CheckCircle } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect.jsx';
 
-// ====== الخطوة الأولى: البيانات الأساسية ======
+// ========== الخطوة الأولى: البيانات الأساسية + إنشاء الحساب مباشرة ==========
 const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   const { t } = useLanguage();
+  const { toast } = useToast();
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!formData.fullName || !formData.email || !formData.password) {
-      alert(t('allFieldsRequired'));
+      toast({ title: t('error'), description: t('allFieldsRequired'), variant: 'destructive' });
       return;
     }
     if (formData.password !== confirmPassword) {
-      alert(t('passwordsDoNotMatch'));
+      toast({ title: t('error'), description: t('passwordsDoNotMatch'), variant: 'destructive' });
       return;
     }
-    nextStep();
+
+    setIsLoading(true);
+
+    // 1. إنشاء المستخدم عبر Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: formData.email,
+      password: formData.password,
+      options: {
+        data: {
+          full_name: formData.fullName,
+          user_type: 'technician',
+        },
+      },
+    });
+
+    if (authError) {
+      toast({ title: t('error'), description: authError.message, variant: 'destructive' });
+      setIsLoading(false);
+      return;
+    }
+
+    if (authData?.user) {
+      // 2. تسجيل الدخول التلقائي (إذا كان البريد غير مفعل، قد لا يكون هناك session)
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (signInError) {
+        // ربما يحتاج تأكيد البريد - نخزن البيانات مؤقتاً وننتقل
+        toast({ title: t('info'), description: 'تم إنشاء الحساب. يرجى تأكيد بريدك الإلكتروني ثم متابعة التسجيل.' });
+        // لا ننتقل للخطوة التالية إذا لم يتم تسجيل الدخول
+        setIsLoading(false);
+        return;
+      }
+
+      // 3. نجاح التسجيل وتسجيل الدخول -> انتقل للخطوة التالية
+      toast({ title: t('success'), description: 'تم إنشاء الحساب بنجاح!' });
+      setIsLoading(false);
+      nextStep(); // الانتقال إلى اختيار الأجهزة
+    } else {
+      toast({ title: t('info'), description: t('checkEmailToConfirm') });
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -46,13 +91,15 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
         <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
       </div>
       <div className="flex justify-end">
-        <Button onClick={handleNext} className="gap-2">{t('next')} <ChevronRight size={16} /></Button>
+        <Button onClick={handleNext} disabled={isLoading} className="gap-2">
+          {isLoading ? t('loading') : t('next')} <ChevronRight size={16} />
+        </Button>
       </div>
     </motion.div>
   );
 };
 
-// ====== الخطوة الثانية: اختيار الأجهزة ======
+// ========== الخطوة الثانية: اختيار الأجهزة ==========
 const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   const { t } = useLanguage();
 
@@ -93,11 +140,11 @@ const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   );
 };
 
-// ====== الخطوة الثالثة: رفع الملفات (حقيقية الآن) ======
+// ========== الخطوة الثالثة: رفع الملفات (بعد تسجيل الدخول) ==========
 const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => {
   const { t } = useLanguage();
   const { toast } = useToast();
-  const [uploading, setUploading] = useState(null); // اسم الحقل الجاري رفعه
+  const [uploading, setUploading] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState({
     nationalIdFront: null,
     nationalIdBack: null,
@@ -110,9 +157,16 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => 
 
     setUploading(fileType);
     
-    // تجهيز اسم فريد للملف
+    // الحصول على المستخدم الحالي (سيكون موجوداً بعد تسجيل الدخول)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast({ title: t('error'), description: 'يجب تسجيل الدخول أولاً', variant: 'destructive' });
+      setUploading(null);
+      return;
+    }
+
     const fileName = `${Date.now()}_${file.name}`;
-    const filePath = `${formData.email || 'unknown'}/${fileType}/${fileName}`;
+    const filePath = `${user.email}/${fileType}/${fileName}`;
 
     const { data, error } = await supabase.storage
       .from('technician-documents')
@@ -127,7 +181,6 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => 
       return;
     }
 
-    // تحديث الحالة المحلية حسب نوع الملف
     setUploadedFiles(prev => ({
       ...prev,
       [fileType]: fileType === 'certificates' ? [...prev.certificates, data.path] : data.path,
@@ -143,13 +196,8 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => 
       return;
     }
 
-    // دمج مسارات الملفات مع formData
-    setFormData({
-      ...formData,
-      documents: uploadedFiles,
-    });
-
-    submitForm(); // استدعاء دالة الإرسال النهائية (ستبنى لاحقاً)
+    setFormData({ ...formData, documents: uploadedFiles });
+    submitForm();
   };
 
   return (
@@ -162,19 +210,16 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => 
         <Input type="file" accept="image/*" onChange={(e) => handleFileUpload('nationalIdFront', e.target.files[0])} disabled={uploading === 'nationalIdFront'} />
         {uploadedFiles.nationalIdFront && <span className="text-green-500 text-xs">✓ تم الرفع</span>}
       </div>
-
       <div>
         <Label>صورة البطاقة (وجه خلفي) *</Label>
         <Input type="file" accept="image/*" onChange={(e) => handleFileUpload('nationalIdBack', e.target.files[0])} disabled={uploading === 'nationalIdBack'} />
         {uploadedFiles.nationalIdBack && <span className="text-green-500 text-xs">✓ تم الرفع</span>}
       </div>
-
       <div>
         <Label>الفيش الجنائي *</Label>
         <Input type="file" accept="image/*,.pdf" onChange={(e) => handleFileUpload('criminalRecord', e.target.files[0])} disabled={uploading === 'criminalRecord'} />
         {uploadedFiles.criminalRecord && <span className="text-green-500 text-xs">✓ تم الرفع</span>}
       </div>
-
       <div>
         <Label>شهادات الخبرة (اختياري)</Label>
         <Input type="file" accept="image/*,.pdf" multiple onChange={async (e) => {
@@ -198,7 +243,7 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => 
   );
 };
 
-// ====== المكون الرئيسي (الحاوية) ======
+// ========== المكون الرئيسي ==========
 const TechnicianRegistrationScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -216,12 +261,13 @@ const TechnicianRegistrationScreen = () => {
   const prevStep = () => setStep(prev => prev - 1);
 
   const submitForm = async () => {
-    // هذه الدالة ستكتمل في المرحلة الأخيرة (حفظ كل البيانات بقاعدة البيانات)
+    // هنا سيتم حفظ باقي البيانات (الأجهزة والملفات) في جدول technicians
+    // وحفظ حالة الحساب "قيد المراجعة"
     toast({ title: t('success'), description: 'عملية التسجيل قيد الإنشاء.' });
   };
 
   const steps = [
-    { title: 'البيانات الأساسية', component: StepBasicInfo },
+    { title: 'إنشاء الحساب', component: StepBasicInfo },
     { title: 'الأجهزة', component: StepDeviceSelection },
     { title: 'الملفات', component: StepDocumentUpload },
   ];
@@ -234,7 +280,6 @@ const TechnicianRegistrationScreen = () => {
         <div className="text-center mb-6">
           <Wrench size={48} className="mx-auto mb-4 text-primary" />
           <h1 className="text-2xl font-bold">{t('register')} - {t('technician')}</h1>
-          {/* مؤشر الخطوات */}
           <div className="flex justify-center mt-4 space-x-2 rtl:space-x-reverse">
             {steps.map((s, index) => (
               <div key={index} className={`h-2 w-16 rounded-full ${index <= step ? 'bg-primary' : 'bg-gray-300'}`} />
