@@ -12,7 +12,7 @@ import CustomerActionsGrid from '@/components/customer/CustomerActionsGrid.jsx';
 import AcceptedTechniciansList from '@/components/customer/AcceptedTechniciansList.jsx';
 import AddBalanceDialog from '@/components/customer/AddBalanceDialog.jsx';
 
-// --- تمت الإضافة: استيراد Supabase ---
+// استيراد Supabase
 import { supabase } from '@/lib/supabaseClient';
 
 const VISIT_FEE = 100;
@@ -43,27 +43,42 @@ const CustomerHomeScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [activeRequests, setActiveRequests] = useState([]);
   const [displayedTechnicians, setDisplayedTechnicians] = useState([]);
-
   const [isAddBalanceDialogOpen, setIsAddBalanceDialogOpen] = useState(false);
 
+  // useEffect الجديد: جلب بيانات المستخدم والرصيد من Supabase
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (user && user.email) {
+    const fetchUserData = async () => {
+      // 1. الحصول على الجلسة الحالية من Supabase
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        navigate('/login/customer');
+        return;
+      }
+
       setCurrentUserEmail(user.email);
-      const balance = parseFloat(localStorage.getItem(`customerBalance_${user.email}`)) || 0;
-      setCustomerBalance(balance);
+
+      // 2. جلب الرصيد من جدول customers مباشرة
+      const { data: customerData, error: balanceError } = await supabase
+        .from('customers')
+        .select('balance')
+        .eq('id', user.id)
+        .single();
+
+      if (!balanceError && customerData) {
+        setCustomerBalance(customerData.balance);
+      } else {
+        setCustomerBalance(0);
+      }
+
+      // 3. جلب الطلبات النشطة (مؤقتاً من localStorage، سيتم تحويلها لاحقاً إلى Supabase)
       const requests = JSON.parse(localStorage.getItem(`customerActiveRequests_${user.email}`)) || [];
       setActiveRequests(requests);
-    } else {
-      navigate('/login/customer');
-    }
+    };
+
+    fetchUserData();
   }, [navigate]);
 
-  useEffect(() => {
-    if (currentUserEmail) {
-      localStorage.setItem(`customerBalance_${currentUserEmail}`, customerBalance.toString());
-    }
-  }, [customerBalance, currentUserEmail]);
+  // تمت إزالة useEffect القديم الذي كان يزامن الرصيد مع localStorage
 
   useEffect(() => {
     if (currentUserEmail) {
@@ -99,14 +114,14 @@ const CustomerHomeScreen = () => {
     setMaintenanceRequest(prev => ({ ...prev, [field]: value }));
   };
 
-  // --- الدالة الجديدة التي تستخدم Supabase ---
+  // دالة إنشاء طلب الصيانة (معدلة لخصم الرصيد من Supabase)
   const handleCreateMaintenanceRequest = async () => {
     if (!maintenanceRequest.deviceType || !maintenanceRequest.issueDescription) {
       toast({ title: t('error'), description: t('allFieldsRequired'), variant: 'destructive' });
       return;
     }
 
-    // 1. جلب المستخدم الحقيقي من Supabase
+    // جلب المستخدم الحقيقي من Supabase
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
       toast({ title: t('error'), description: 'يجب تسجيل الدخول', variant: 'destructive' });
@@ -115,17 +130,28 @@ const CustomerHomeScreen = () => {
 
     setIsLoading(true);
 
-    // 2. التحقق من الرصيد المحلي
+    // التحقق من الرصيد
     if (customerBalance < VISIT_FEE) {
       toast({ title: t('error'), description: t('insufficientBalance'), variant: 'destructive' });
       setIsLoading(false);
       return;
     }
 
-    // خصم الرسوم
+    // خصم الرصيد محلياً (لتحديث الواجهة فوراً)
     setCustomerBalance(prev => prev - VISIT_FEE);
 
-    // 3. بناء الطلب وإرساله إلى Supabase
+    // خصم الرصيد من قاعدة البيانات
+    const { error: deductError } = await supabase
+      .from('customers')
+      .update({ balance: customerBalance - VISIT_FEE })
+      .eq('id', user.id);
+
+    if (deductError) {
+      console.error('فشل خصم الرصيد من قاعدة البيانات:', deductError);
+      // يمكن إعادة الرصيد المحلي أو إشعار المستخدم
+    }
+
+    // تجهيز الطلب وإرساله إلى Supabase
     const newRequest = {
       customer_id: user.id,
       device_type: maintenanceRequest.deviceType,
@@ -146,7 +172,7 @@ const CustomerHomeScreen = () => {
       return;
     }
 
-    // 4. نجاح
+    // نجاح
     toast({ title: t('success'), description: 'تم إرسال الطلب للفنيين القريبين!' });
     setMaintenanceRequest({ deviceType: '', issueDescription: '' });
 
@@ -160,7 +186,7 @@ const CustomerHomeScreen = () => {
 
   const handleOpenAddBalanceDialog = () => setIsAddBalanceDialogOpen(true);
 
-  // --- دالة الشحن الجديدة (ترسل طلب شحن بدلاً من إضافة الرصيد مباشرة) ---
+  // دالة الشحن الجديدة (ترسل طلب شحن بدلاً من إضافة الرصيد مباشرة)
   const handleConfirmTransfer = (method, amount, source, screenshot) => {
     setIsAddBalanceDialogOpen(false);
 
