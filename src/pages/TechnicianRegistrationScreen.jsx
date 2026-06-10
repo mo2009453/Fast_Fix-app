@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { supabase } from '@/lib/supabaseClient';
@@ -170,24 +170,44 @@ const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
   );
 };
 
-// ========== الخطوة الثالثة: رفع الملفات (تنتقل إلى الخطوة الرابعة) ==========
+// ========== الخطوة الثالثة: رفع الملفات ==========
 const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [uploading, setUploading] = useState(null);
-  const [uploadedFiles, setUploadedFiles] = useState(formData.documents || {
-    nationalIdFront: null,
-    nationalIdBack: null,
-    criminalRecord: null,
-    certificates: [],
-  });
+  const [uploadedFiles, setUploadedFiles] = useState(
+    formData.documents && Object.keys(formData.documents).length > 0
+      ? formData.documents
+      : {
+          nationalIdFront: null,
+          nationalIdBack: null,
+          criminalRecord: null,
+          certificates: [],
+        }
+  );
+  const [sessionChecked, setSessionChecked] = useState(false);
+
+  // التحقق من الجلسة عند تحميل المكون
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: t('error'), description: 'انتهت الجلسة، يرجى تسجيل الدخول مجدداً.', variant: 'destructive' });
+        navigate('/login/technician');
+      } else {
+        setSessionChecked(true);
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleFileUpload = async (fileType, file) => {
     if (!file) return;
     setUploading(fileType);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+    if (sessionError || !user) {
       toast({ title: t('error'), description: 'يجب تسجيل الدخول أولاً', variant: 'destructive' });
       setUploading(null);
       return;
@@ -221,8 +241,17 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, nextStep }) => {
       return;
     }
     setFormData({ ...formData, documents: uploadedFiles });
-    nextStep(); // ينتقل للخطوة الرابعة (الأسئلة)
+    nextStep();
   };
+
+  // إذا لم يتم التحقق من الجلسة بعد، نعرض رسالة تحميل
+  if (!sessionChecked) {
+    return (
+      <div className="flex justify-center items-center h-32">
+        <p className="text-muted-foreground">جارٍ التحقق من الجلسة...</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
