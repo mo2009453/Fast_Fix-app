@@ -1,145 +1,248 @@
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button.jsx';
+import { LogOut, Wrench, MapPin, Star } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext.jsx';
+import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast.jsx';
+import { supabase } from '@/lib/supabaseClient';
 
-    import React from 'react';
-    import { motion } from 'framer-motion';
-    import { Button } from '@/components/ui/button.jsx';
-    import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
-    import { Bell, CheckCircle, XCircle, User, MapPin, Edit3, Star, LogOut } from 'lucide-react';
-    import { useLanguage } from '@/contexts/LanguageContext.jsx';
-    import { useNavigate } from 'react-router-dom';
+const TechnicianHomeScreen = () => {
+  const { t } = useLanguage();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
-    const TechnicianHomeScreen = () => {
-      const { t, language } = useLanguage();
-      const navigate = useNavigate();
+  const [technician, setTechnician] = useState(null);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [acceptedRequests, setAcceptedRequests] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-      const handleLogout = () => {
-        localStorage.removeItem('user');
-        localStorage.removeItem('userType');
-        navigate('/user-type');
-      };
-
-      const serviceRequests = [
-        { id: 1, clientName: "Aisha Mohammed", service: t('refrigerator') + " " + t('repair', "Repair"), location: "123 Main St, Dubai", status: "new" },
-        { id: 2, clientName: "Omar Abdullah", service: t('airConditioner') + " " + t('maintenance', "Maintenance"), location: "456 Palm Jumeirah, Dubai", status: "inProgress" },
-        { id: 3, clientName: "Layla Khaled", service: t('washingMachine') + " " + t('installation', "Installation"), location: "789 Marina Walk, Dubai", status: "completed" },
-      ];
-
-      const getStatusColor = (status) => {
-        if (status === "new") return "text-blue-500";
-        if (status === "inProgress") return "text-yellow-500";
-        if (status === "completed") return "text-green-500";
-        return "text-muted-foreground";
-      };
-      
-      const getStatusText = (status) => {
-        if (status === "new") return t('new', 'New');
-        if (status === "inProgress") return t('inProgress');
-        if (status === "completed") return t('completed');
-        return status;
+  // جلب بيانات الفني والطلبات
+  useEffect(() => {
+    const fetchData = async () => {
+      // 1. جلب الجلسة
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        navigate('/login/technician');
+        return;
       }
 
-      return (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5"
-          key={language}
-        >
-          <header className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold text-primary">{t('technician')} {t('home')}</h1>
-             <Button variant="ghost" onClick={handleLogout} className="text-destructive hover:bg-destructive/10">
-              <LogOut className="ltr:mr-2 rtl:ml-2 h-5 w-5" /> {t('logout')}
-            </Button>
-          </header>
+      // 2. جلب بيانات الفني
+      const { data: techData, error: techError } = await supabase
+        .from('technicians')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <motion.div whileHover={{ scale: 1.03 }} transition={{ type: "spring", stiffness: 300 }}>
-              <Card className="h-full hover:shadow-xl transition-shadow duration-300 glassmorphism-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-accent"><Bell className="ltr:mr-2 rtl:ml-2" /> {t('newServiceRequests')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">{t('newRequestsDesc', 'View and manage incoming service requests from customers.')}</p>
-                  <Button className="mt-4 w-full bg-accent text-accent-foreground hover:bg-accent/90">{t('viewRequests', 'View Requests')}</Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-            <motion.div whileHover={{ scale: 1.03 }} transition={{ type: "spring", stiffness: 300 }}>
-              <Card className="h-full hover:shadow-xl transition-shadow duration-300 glassmorphism-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-accent"><Star className="ltr:mr-2 rtl:ml-2" /> {t('rateClient')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">{t('rateClientDesc', 'Provide feedback on clients after completing a job.')}</p>
-                  <Button className="mt-4 w-full bg-accent text-accent-foreground hover:bg-accent/90">{t('ratePreviousClients', 'Rate Clients')}</Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-          
-          <div>
-            <h2 className="text-2xl font-semibold mb-4 text-primary">{t('currentJobs', 'Current Jobs & Requests')}</h2>
-            {serviceRequests.length > 0 ? (
-              <div className="space-y-4">
-                {serviceRequests.map((req, index) => (
-                  <motion.div
-                    key={req.id}
-                    initial={{ opacity: 0, x: language === 'ar' ? 50 : -50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                  >
-                    <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 glassmorphism-card">
-                      <CardHeader>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <CardTitle className="text-xl text-primary">{req.service}</CardTitle>
-                            <CardDescription className="flex items-center text-muted-foreground">
-                              <User className="ltr:mr-1 rtl:ml-1 h-4 w-4" /> {req.clientName}
-                            </CardDescription>
-                          </div>
-                          <span className={`font-semibold px-2 py-1 rounded-full text-xs ${getStatusColor(req.status)} bg-opacity-20 ${req.status === "new" ? "bg-blue-500/20" : req.status === "inProgress" ? "bg-yellow-500/20" : "bg-green-500/20"}`}>
-                            {getStatusText(req.status)}
-                          </span>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="flex items-center text-sm mb-3">
-                          <MapPin className="ltr:mr-2 rtl:ml-2 h-4 w-4 text-accent" /> {req.location}
-                        </p>
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          {req.status === 'new' && (
-                            <>
-                              <Button size="sm" className="flex-1 bg-green-500 hover:bg-green-600 text-white">
-                                <CheckCircle className="ltr:mr-2 rtl:ml-2 h-4 w-4" /> {t('accept')}
-                              </Button>
-                              <Button size="sm" variant="destructive" className="flex-1">
-                                <XCircle className="ltr:mr-2 rtl:ml-2 h-4 w-4" /> {t('decline')}
-                              </Button>
-                            </>
-                          )}
-                          {req.status === 'inProgress' && (
-                            <Button size="sm" className="flex-1 bg-blue-500 hover:bg-blue-600 text-white">
-                              <Edit3 className="ltr:mr-2 rtl:ml-2 h-4 w-4" /> {t('updateJobStatus')}
-                            </Button>
-                          )}
-                           {req.status === 'completed' && (
-                            <Button size="sm" variant="outline" className="flex-1 border-primary text-primary hover:bg-primary/10">
-                              <Star className="ltr:mr-2 rtl:ml-2 h-4 w-4" /> {t('rateClient')}
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">{t('noCurrentJobs', 'No current jobs or new requests at the moment.')}</p>
-            )}
-          </div>
-        </motion.div>
-      );
+      if (techError || !techData || techData.status !== 'approved') {
+        toast({ title: t('error'), description: 'حسابك غير مفعل أو قيد المراجعة', variant: 'destructive' });
+        navigate('/login/technician');
+        return;
+      }
+
+      setTechnician(techData);
+
+      // 3. جلب الطلبات المعلقة (اللي تناسب تخصص الفني)
+      const techSkills = techData.skills ? techData.skills.split(', ') : [];
+      let query = supabase
+        .from('maintenance_requests')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      // لو الفني محدد أجهزة معينة، نجيب الطلبات اللي تناسب تخصصه
+      if (techSkills.length > 0) {
+        query = query.in('device_type', techSkills);
+      }
+
+      const { data: requests, error: requestsError } = await query;
+
+      if (!requestsError) {
+        setPendingRequests(requests || []);
+      }
+
+      // 4. جلب الطلبات اللي قبلها الفني
+      const { data: accepted, error: acceptedError } = await supabase
+        .from('maintenance_requests')
+        .select('*')
+        .eq('technician_id', user.id)
+        .in('status', ['accepted', 'on_the_way', 'in_progress'])
+        .order('created_at', { ascending: false });
+
+      if (!acceptedError) {
+        setAcceptedRequests(accepted || []);
+      }
+
+      setIsLoading(false);
     };
 
-    export default TechnicianHomeScreen;
-  
+    fetchData();
+  }, [navigate, toast, t]);
+
+  // قبول طلب صيانة
+  const handleAcceptRequest = async (requestId) => {
+    const { error } = await supabase
+      .from('maintenance_requests')
+      .update({
+        technician_id: technician.id,
+        status: 'accepted',
+        accepted_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+      .eq('status', 'pending'); // ضمان أن طلب لم يقبله أحد بعد
+
+    if (error) {
+      toast({ title: t('error'), description: 'فشل قبول الطلب. ربما تم قبوله من فني آخر.', variant: 'destructive' });
+      // إعادة تحميل الطلبات
+      return;
+    }
+
+    toast({ title: t('success'), description: 'تم قبول الطلب بنجاح!' });
+    // إزالة الطلب من قائمة المعلقة وإضافته للقائمة المقبولة
+    const accepted = pendingRequests.find(r => r.id === requestId);
+    setPendingRequests(prev => prev.filter(r => r.id !== requestId));
+    if (accepted) {
+      setAcceptedRequests(prev => [{ ...accepted, status: 'accepted', technician_id: technician.id }, ...prev]);
+    }
+  };
+
+  // تغيير حالة الطلب (للطلبات المقبولة)
+  const handleUpdateStatus = async (requestId, newStatus) => {
+    const { error } = await supabase
+      .from('maintenance_requests')
+      .update({ status: newStatus })
+      .eq('id', requestId)
+      .eq('technician_id', technician.id);
+
+    if (error) {
+      toast({ title: t('error'), description: 'فشل تحديث الحالة', variant: 'destructive' });
+      return;
+    }
+
+    setAcceptedRequests(prev =>
+      prev.map(r => (r.id === requestId ? { ...r, status: newStatus } : r))
+    );
+    toast({ title: t('success'), description: 'تم تحديث الحالة' });
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem('user');
+    localStorage.removeItem('userType');
+    navigate('/user-type');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5">
+        <p className="text-xl">جارٍ التحميل...</p>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5"
+    >
+      <header className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-primary">{t('technician')} {t('home')}</h1>
+          {technician && (
+            <p className="text-muted-foreground">
+              {technician.full_name} - {technician.specialization}
+            </p>
+          )}
+        </div>
+        <Button variant="ghost" onClick={handleLogout} className="text-destructive">
+          <LogOut className="ltr:mr-2 rtl:ml-2 h-5 w-5" /> {t('logout')}
+        </Button>
+      </header>
+
+      {/* قسم الطلبات المعلقة */}
+      <section className="mb-8">
+        <h2 className="text-2xl font-semibold mb-4">طلبات الصيانة المتاحة</h2>
+        {pendingRequests.length === 0 ? (
+          <div className="text-center p-8 bg-muted/30 rounded-lg">
+            <Wrench size={48} className="mx-auto mb-2 text-muted-foreground" />
+            <p className="text-muted-foreground">لا توجد طلبات صيانة متاحة حالياً.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {pendingRequests.map(request => (
+              <motion.div
+                key={request.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-card rounded-xl p-4 shadow-md border"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-lg">
+                      {t(request.device_type) || request.device_type}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {request.issue_description}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {new Date(request.created_at).toLocaleString('ar-EG')}
+                    </p>
+                  </div>
+                  <Button onClick={() => handleAcceptRequest(request.id)}>
+                    قبول الطلب
+                  </Button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* قسم الطلبات المقبولة */}
+      {acceptedRequests.length > 0 && (
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">طلباتي النشطة</h2>
+          <div className="grid gap-4">
+            {acceptedRequests.map(request => (
+              <div key={request.id} className="bg-card rounded-xl p-4 shadow-md border border-primary/20">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-lg">
+                      {t(request.device_type) || request.device_type}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {request.issue_description}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      الحالة: <span className="font-semibold text-primary">{request.status}</span>
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    {request.status === 'accepted' && (
+                      <Button size="sm" onClick={() => handleUpdateStatus(request.id, 'on_the_way')}>
+                        في الطريق
+                      </Button>
+                    )}
+                    {request.status === 'on_the_way' && (
+                      <Button size="sm" onClick={() => handleUpdateStatus(request.id, 'in_progress')}>
+                        بدء العمل
+                      </Button>
+                    )}
+                    {request.status === 'in_progress' && (
+                      <Button size="sm" onClick={() => handleUpdateStatus(request.id, 'completed')}>
+                        إتمام
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </motion.div>
+  );
+};
+
+export default TechnicianHomeScreen;
