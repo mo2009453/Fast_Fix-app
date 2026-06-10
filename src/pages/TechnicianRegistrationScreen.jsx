@@ -14,7 +14,7 @@ import MultiSelect from '@/components/MultiSelect.jsx';
 const QUESTIONS_BANK = {
   gas_heater: [
     { question: 'ما هو الغاز المستخدم في سخان الغاز المنزلي، وما هي خصائصه؟' },
-    { question: 'كيف تعمل قطعة البيزو في إشعال السخان؟ اشرح العملية.' },
+    { question: 'السخان الغاز لا يعمل بالرغم من تغيير البطاريات اذحر الاسباب.' },
     { question: 'إذا لم يشتعل السخان، ما هي خطوات الفحص الأولى التي تقوم بها؟' },
     { question: 'ما هي وظيفة صمام الأمان في السخان، وكيف تختبره؟' },
     { question: 'كم مرة يفضل صيانة السخان، وما هي إجراءات الصيانة الأساسية؟' },
@@ -91,9 +91,9 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
 
     if (existingTech) {
       if (existingTech.email === formData.email) {
-        toast({ title: t('error'), description: 'هذا البريد الإلكتروني مسجل بالفعل لفني آخر', variant: 'destructive' });
+        toast({ title: t('error'), description: 'هذا البريد الإلكتروني مسجل بالفعل', variant: 'destructive' });
       } else if (existingTech.phone === formData.phone) {
-        toast({ title: t('error'), description: 'رقم الهاتف هذا مسجل بالفعل لفني آخر', variant: 'destructive' });
+        toast({ title: t('error'), description: 'رقم الهاتف هذا مسجل بالفعل', variant: 'destructive' });
       }
       setIsLoading(false);
       return;
