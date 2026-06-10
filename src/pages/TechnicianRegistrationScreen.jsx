@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Wrench, ChevronRight, ChevronLeft, CheckCircle } from 'lucide-react';
+import MultiSelect from '@/components/MultiSelect.jsx';
 
-// مكون الخطوة الأولى: البيانات الأساسية
+// الخطوة الأولى: البيانات الأساسية
 const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   const { t } = useLanguage();
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -51,18 +52,48 @@ const StepBasicInfo = ({ formData, setFormData, nextStep }) => {
   );
 };
 
-// مكونات الخطوات التالية (وهمية حالياً)
-const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => (
-  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-    <h2 className="text-xl font-bold mb-4">اختيار الأجهزة</h2>
-    <p>هنا سيتم اختيار الأجهزة من القائمة المنسدلة (سيتم بناؤها في المرحلة التالية).</p>
-    <div className="flex justify-between mt-6">
-      <Button variant="outline" onClick={prevStep}><ChevronLeft size={16} /> {('previous')}</Button>
-      <Button onClick={nextStep}>{('next')} <ChevronRight size={16} /></Button>
-    </div>
-  </motion.div>
-);
+// الخطوة الثانية: اختيار الأجهزة (حقيقية)
+const StepDeviceSelection = ({ formData, setFormData, nextStep, prevStep }) => {
+  const { t } = useLanguage();
 
+  const deviceOptions = [
+    { value: 'gas_heater', label: 'سخان غاز' },
+    { value: 'electric_heater', label: 'سخان كهربائي' },
+    { value: 'washing_machine', label: 'غسالة' },
+    { value: 'refrigerator', label: 'ثلاجة' },
+    { value: 'air_conditioner', label: 'تكييف' },
+    { value: 'oven', label: 'بوتاجاز / فرن' },
+  ];
+
+  const handleDevicesChange = (selectedValues) => {
+    setFormData({ ...formData, selectedDevices: selectedValues });
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+      <h2 className="text-xl font-bold text-center">اختيار الأجهزة التي تعمل عليها</h2>
+      <p className="text-sm text-muted-foreground text-center">يمكنك اختيار أكثر من جهاز</p>
+      
+      <MultiSelect
+        options={deviceOptions}
+        selected={formData.selectedDevices}
+        onChange={handleDevicesChange}
+        placeholder="اضغط لاختيار الأجهزة..."
+      />
+
+      <div className="flex justify-between mt-6">
+        <Button variant="outline" onClick={prevStep}>
+          <ChevronLeft size={16} /> {t('previous')}
+        </Button>
+        <Button onClick={nextStep} disabled={formData.selectedDevices.length === 0}>
+          {t('next')} <ChevronRight size={16} />
+        </Button>
+      </div>
+    </motion.div>
+  );
+};
+
+// الخطوة الثالثة: رفع الملفات (مؤقتة)
 const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => (
   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
     <h2 className="text-xl font-bold mb-4">رفع الملفات</h2>
@@ -74,6 +105,7 @@ const StepDocumentUpload = ({ formData, setFormData, prevStep, submitForm }) => 
   </motion.div>
 );
 
+// المكون الرئيسي
 const TechnicianRegistrationScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -93,7 +125,6 @@ const TechnicianRegistrationScreen = () => {
   const submitForm = async () => {
     // سيتم بناء هذه الدالة بالكامل في المراحل القادمة
     toast({ title: t('success'), description: 'عملية التسجيل قيد الإنشاء.' });
-    // navigate('/login/technician');
   };
 
   const steps = [
