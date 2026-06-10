@@ -43,7 +43,7 @@ const CustomerHomeScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [activeRequests, setActiveRequests] = useState([]);
   const [displayedTechnicians, setDisplayedTechnicians] = useState([]);
-  
+
   const [isAddBalanceDialogOpen, setIsAddBalanceDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -55,37 +55,37 @@ const CustomerHomeScreen = () => {
       const requests = JSON.parse(localStorage.getItem(`customerActiveRequests_${user.email}`)) || [];
       setActiveRequests(requests);
     } else {
-      navigate('/login/customer'); 
+      navigate('/login/customer');
     }
   }, [navigate]);
 
   useEffect(() => {
     if (currentUserEmail) {
-        localStorage.setItem(`customerBalance_${currentUserEmail}`, customerBalance.toString());
+      localStorage.setItem(`customerBalance_${currentUserEmail}`, customerBalance.toString());
     }
   }, [customerBalance, currentUserEmail]);
 
   useEffect(() => {
     if (currentUserEmail) {
-        localStorage.setItem(`customerActiveRequests_${currentUserEmail}`, JSON.stringify(activeRequests));
-        updateDisplayedTechnicians();
+      localStorage.setItem(`customerActiveRequests_${currentUserEmail}`, JSON.stringify(activeRequests));
+      updateDisplayedTechnicians();
     }
   }, [activeRequests, language, t, currentUserEmail]);
-  
+
   const updateDisplayedTechnicians = () => {
     const currentRequestId = activeRequests.length > 0 ? activeRequests[activeRequests.length - 1]?.id : null;
     if (!currentRequestId) {
-        setDisplayedTechnicians([]);
-        return;
+      setDisplayedTechnicians([]);
+      return;
     }
 
     const technicians = mockTechniciansData
-        .filter(tech => tech.distance <= 20 && tech.acceptedRequests.includes(currentRequestId))
-        .map(tech => ({
-            ...tech,
-            name: tech.name, 
-            skills: tech.skills.map(skill => t(skill))
-        }));
+      .filter(tech => tech.distance <= 20 && tech.acceptedRequests.includes(currentRequestId))
+      .map(tech => ({
+        ...tech,
+        name: tech.name,
+        skills: tech.skills.map(skill => t(skill))
+      }));
     setDisplayedTechnicians(technicians);
   };
 
@@ -157,30 +157,53 @@ const CustomerHomeScreen = () => {
 
     setIsLoading(false);
   };
-  
+
   const handleOpenAddBalanceDialog = () => setIsAddBalanceDialogOpen(true);
 
+  // --- دالة الشحن الجديدة (ترسل طلب شحن بدلاً من إضافة الرصيد مباشرة) ---
   const handleConfirmTransfer = (method, amount, source, screenshot) => {
     setIsAddBalanceDialogOpen(false);
-    toast({ title: t('paymentPending') });
-    
-    const pendingTransferData = { 
-        method, 
-        amount, 
-        source, 
-        screenshotName: screenshot ? screenshot.name : 'N/A',
-        userEmail: currentUserEmail, 
-        timestamp: new Date().toISOString() 
+
+    const transferData = {
+      method,
+      amount,
+      source,
+      screenshotName: screenshot ? screenshot.name : 'N/A',
+      userEmail: currentUserEmail,
+      timestamp: new Date().toISOString(),
     };
 
+    // حفظ نسخة مؤقتة محلياً (اختياري)
     const pendingTransfers = JSON.parse(localStorage.getItem('pendingTransfers')) || [];
-    pendingTransfers.push(pendingTransferData);
+    pendingTransfers.push(transferData);
     localStorage.setItem('pendingTransfers', JSON.stringify(pendingTransfers));
 
-    setTimeout(() => {
-      setCustomerBalance(prev => prev + amount);
-      toast({ title: t('success'), description: t('paymentSuccessful') });
-    }, 5000); 
+    // إرسال طلب الشحن إلى جدول recharge_requests في Supabase
+    const insertRechargeRequest = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: t('error'), description: 'يجب تسجيل الدخول لطلب الشحن', variant: 'destructive' });
+        return;
+      }
+
+      const { error } = await supabase.from('recharge_requests').insert([{
+        user_id: user.id,
+        email: currentUserEmail,
+        amount: amount,
+        phone_number: source,
+        screenshot_path: screenshot ? screenshot.name : null,
+        status: 'pending'
+      }]);
+
+      if (error) {
+        console.error('خطأ في إرسال طلب الشحن:', error);
+        toast({ title: t('error'), description: 'فشل إرسال طلب الشحن', variant: 'destructive' });
+      } else {
+        toast({ title: t('success'), description: 'تم إرسال طلب الشحن للمراجعة. سيتم إضافة الرصيد بعد الموافقة.' });
+      }
+    };
+
+    insertRechargeRequest();
   };
 
   return (
@@ -198,7 +221,7 @@ const CustomerHomeScreen = () => {
         </Button>
       </header>
 
-      <BalanceDisplay 
+      <BalanceDisplay
         customerBalance={customerBalance}
         onAddFundsClick={handleOpenAddBalanceDialog}
         t={t}
@@ -213,7 +236,7 @@ const CustomerHomeScreen = () => {
         deviceTypes={deviceTypes}
         visitFee={VISIT_FEE}
       />
-      
+
       <CustomerActionsGrid t={t} />
 
       <AcceptedTechniciansList technicians={displayedTechnicians} t={t} />
