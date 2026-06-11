@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import {
   LogOut, MapPin, Clock, Wrench, Settings, User, AlertTriangle, RefreshCw,
-  XCircle, MessageSquare, ThumbsUp, PhoneCall, CheckCircle, Truck, Play, MessageCircle
+  XCircle, MessageSquare, ThumbsUp, CheckCircle, Truck, MessageCircle
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,7 @@ import ChatPopup from '@/components/ChatPopup.jsx';
 
 const VISIT_FEE = 100;
 
+// --- مكون أمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -28,9 +29,11 @@ class SafeComponent extends React.Component {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center p-8">
           <AlertTriangle size={64} className="text-red-500 mb-4" />
-          <h1 className="text-2xl font-bold text-red-600 mb-2">حدث خطأ مفاجئ</h1>
+          <h1 className="text-2xl font-bold text-red-600 mb-2">حدث خطأ</h1>
           <p className="text-center text-muted-foreground mb-4">{this.state.error?.message}</p>
-          <Button onClick={() => this.setState({ error: null })}><RefreshCw size={16} /> إعادة تحميل</Button>
+          <Button onClick={() => this.setState({ error: null })}>
+            <RefreshCw size={16} /> إعادة تحميل
+          </Button>
         </div>
       );
     }
@@ -38,6 +41,7 @@ class SafeComponent extends React.Component {
   }
 }
 
+// --- دوال مساعدة ---
 const deviceTypes = [
   { value: 'washingMachine', labelKey: 'washingMachine' },
   { value: 'heater', labelKey: 'heater' },
@@ -79,6 +83,20 @@ const CustomerHomeScreenContent = () => {
   const [cancelVisitOpen, setCancelVisitOpen] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
   const [chatRequestId, setChatRequestId] = useState(null); // لفتح الشات
+
+  // تنظيف التعيينات المنتهية (آمن)
+  useEffect(() => {
+    const cleanup = async () => {
+      if (supabase && typeof supabase.rpc === 'function') {
+        try {
+          await supabase.rpc('expire_stale_assignments');
+        } catch (err) {
+          // لا شيء
+        }
+      }
+    };
+    cleanup();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +190,7 @@ const CustomerHomeScreenContent = () => {
     }]).select();
 
     setSubmitting(false);
-    if (error) {
+    if (error) {    // استرجاع الرصيد إذا فشل الطلب
       setBalance(balance);
       await supabase.from('customers').update({ balance }).eq('id', user.id);
       toast({ description: 'فشل: ' + error.message });
@@ -200,7 +218,7 @@ const CustomerHomeScreenContent = () => {
     }
   };
 
-  // إنشاء طلب استرداد (بدلاً من إرجاع الرصيد مباشرة)
+  // إنشاء طلب استرداد بدلاً من إعادة الرصيد مباشرة
   const createRefundRequest = async (reqId, reason = '') => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('recharge_requests').insert({
@@ -305,8 +323,7 @@ const CustomerHomeScreenContent = () => {
         </div>
         <Button variant="ghost" onClick={() => { localStorage.clear(); navigate('/user-type'); }}><LogOut className="ltr:mr-2 rtl:ml-2" /> {t('logout')}</Button>
       </header>
-
-      {/* نموذج الطلب */}
+  {/* نموذج الطلب */}
       <div className="bg-card p-6 rounded-2xl shadow mb-8">
         <h2 className="text-2xl font-bold mb-4"><Settings className="inline text-primary" /> طلب صيانة جديد</h2>
         <div className="space-y-4">
