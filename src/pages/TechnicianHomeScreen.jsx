@@ -11,7 +11,7 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 
-// --- مكون الأمان لالتقاط الأخطاء ---
+// --- مكون أمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -37,7 +37,6 @@ class SafeComponent extends React.Component {
   }
 }
 
-// --- دوال مساعدة ---
 const MAX_DISTANCE_KM = 15;
 
 const getDistance = (lat1, lon1, lat2, lon2) => {
@@ -49,7 +48,6 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-// --- المحتوى الرئيسي ---
 const TechnicianHomeScreenContent = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -63,9 +61,8 @@ const TechnicianHomeScreenContent = () => {
   const [locationStatus, setLocationStatus] = useState('جاري تحديد الموقع...');
   const [chatRequestId, setChatRequestId] = useState(null);
 
-  // تنظيف التعيينات المنتهية (بطريقة آمنة)
+  // تنظيف التعيينات المنتهية (آمن)
   useEffect(() => {
-    // إذا كانت الدالة rpc متوفرة نستدعيها، وإلا نتجاهل
     if (supabase && typeof supabase.rpc === 'function') {
       supabase.rpc('expire_stale_assignments').catch(() => {});
     }
@@ -76,10 +73,7 @@ const TechnicianHomeScreenContent = () => {
     let cancelled = false;
     const init = async () => {
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !user) {
-        navigate('/login/technician');
-        return;
-      }
+      if (userErr || !user) { navigate('/login/technician'); return; }
       const { data: tech, error: techErr } = await supabase
         .from('technicians')
         .select('*')
