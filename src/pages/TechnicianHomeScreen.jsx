@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
-import { LogOut, MapPin, Navigation, Wrench, Phone, Clock, Star } from 'lucide-react';
-import { useLanguage } from '@/contexts/LanguageContext.jsx';
+import { Input } from '@/components/ui/input.jsx';
+import { LogOut, MapPin, Clock, Wrench, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 
 const MAX_DISTANCE_KM = 15;
-const AVG_SPEED_KMH = 30;
 
-// حساب المسافة بين إحداثيين
 const getDistance = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -20,288 +19,202 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 const TechnicianHomeScreen = () => {
-  const { t } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
-
   const [technician, setTechnician] = useState(null);
   const [pendingRequests, setPendingRequests] = useState([]);
-  const [acceptedRequests, setAcceptedRequests] = useState([]);
+  const [myAssignedRequests, setMyAssignedRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [submittingBid, setSubmittingBid] = useState(null);
+  const [delayReason, setDelayReason] = useState(''); // للتأجيل
+
+  useEffect(() => {
+    supabase.rpc('expire_stale_assignments');
+  }, []);
 
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/login/technician'); return; }
-
-      const { data: tech, error: techErr } = await supabase
-        .from('technicians')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (techErr || !tech || tech.status !== 'approved') {
-        toast({ title: 'خطأ', description: 'حسابك قيد المراجعة.' });
-        navigate('/login/technician');
-        return;
-      }
+      const { data: tech } = await supabase.from('technicians').select('*').eq('id', user.id).single();
+      if (!tech || tech.status !== 'approved') { navigate('/login/technician'); return; }
       setTechnician(tech);
 
-      // محاولة الحصول على الموقع
-      const tryGeolocation = () => new Promise((resolve) => {
-        if (!navigator.geolocation) {
-          if (tech.lat && tech.lng) setCurrentLocation({ lat: tech.lat, lng: tech.lng });
-          resolve();
-          return;
-        }
+      if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (pos) => {
             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             setCurrentLocation(loc);
             await supabase.from('technicians').update({ lat: loc.lat, lng: loc.lng }).eq('id', user.id);
-            resolve();
           },
-          () => {
-            if (tech.lat && tech.lng) {
-              setCurrentLocation({ lat: tech.lat, lng: tech.lng });
-              toast({ description: 'تم استخدام موقعك المخزن.' });
-            } else {
-              toast({ title: 'تنبيه', description: 'يرجى تفعيل الموقع لعرض الطلبات.' });
-            }
-            resolve();
-          }
+          () => { if (tech.lat) setCurrentLocation({ lat: tech.lat, lng: tech.lng }); }
         );
-      });
+      } else if (tech.lat) setCurrentLocation({ lat: tech.lat, lng: tech.lng });
 
-      await tryGeolocation();
-      setIsLoading(false); // ← هنا الإصلاح
+      setIsLoading(false);
     };
-
     init();
   }, []);
 
   useEffect(() => {
-    if (!currentLocation || !technician) return;
-
-    const fetchNearbyRequests = async () => {
-      const { data: all, error } = await supabase
-        .from('maintenance_requests')
-        .select('*')
-        .eq('status', 'pending')
-        .not('lat', 'is', null)
-        .not('lng', 'is', null)
-        .order('created_at', { ascending: false });
-
-      if (error) return;
-
-      const nearby = all
-        .filter(req => {
-          const dist = getDistance(currentLocation.lat, currentLocation.lng, req.lat, req.lng);
-          return dist <= MAX_DISTANCE_KM;
-        })
-        .map(req => ({
-          ...req,
-          distance: getDistance(currentLocation.lat, currentLocation.lng, req.lat, req.lng),
-        }));
-
-      setPendingRequests(nearby);
+    if (!currentLocation) return;
+    const fetchRequests = async () => {
+      const { data } = await supabase.from('maintenance_requests').select('*').eq('status', 'pending').not('lat', 'is', null);
+      if (data) {
+        const nearby = data.filter(r => getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng) <= MAX_DISTANCE_KM)
+          .map(r => ({ ...r, distance: getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng) }));
+        setPendingRequests(nearby);
+      }
     };
+    fetchRequests();
+  }, [currentLocation]);
 
-    // جلب الطلبات النشطة الخاصة بالفني
-    const fetchMyRequests = async () => {
-      const { data: mine } = await supabase
-        .from('maintenance_requests')
+  const handlePlaceBid = async (requestId) => {
+    setSubmittingBid(requestId);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('bids').insert({
+      request_id: requestId,
+      technician_id: user.id
+    });
+    setSubmittingBid(null);
+    if (error) {
+      if (error.code === '23505') toast({ description: 'لقد قدمت عرضاً مسبقاً.' });
+      else toast({ description: 'فشل تقديم العرض.' });
+    } else {
+      toast({ description: 'تم تقديم العرض. بانتظار موافقة العميل.' });
+    }
+  };
+
+  useEffect(() => {
+    if (!technician) return;
+    const fetchAssigned = async () => {
+      await supabase.rpc('expire_stale_assignments'); // تنظيف سريع
+      const { data } = await supabase.from('maintenance_requests')
         .select('*')
         .eq('technician_id', technician.id)
-        .in('status', ['accepted', 'on_the_way', 'in_progress'])
-        .order('created_at', { ascending: false });
-
-      if (mine) setAcceptedRequests(mine);
+        .in('status', ['assigned', 'accepted', 'on_the_way', 'in_progress']);
+      if (data) setMyAssignedRequests(data);
     };
+    fetchAssigned();
+  }, [technician]);
 
-    fetchNearbyRequests();
-    fetchMyRequests();
-  }, [currentLocation, technician]);
+  const handleUpdateStatus = async (requestId, newStatus) => {
+    const updateData = { status: newStatus };
+    if (newStatus === 'accepted') {
+      updateData.expires_at = null; // إلغاء الصلاحية
+    }
+    const { error } = await supabase.from('maintenance_requests').update(updateData).eq('id', requestId);
+    if (error) {
+      toast({ description: 'فشل تحديث الحالة.' });
+      return;
+    }
+    setMyAssignedRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updateData } : r));
+    toast({ description: `الحالة تغيرت إلى ${newStatus}` });
+  };
 
-  const handleAccept = async (id) => {
+  const handleDelay = async (requestId) => {
+    if (!delayReason.trim()) {
+      toast({ description: 'يرجى كتابة سبب التأجيل.' });
+      return;
+    }
     const { error } = await supabase
       .from('maintenance_requests')
-      .update({ technician_id: technician.id, status: 'accepted', accepted_at: new Date().toISOString() })
-      .eq('id', id)
-      .eq('status', 'pending');
-
-    if (error) return toast({ title: 'خطأ', description: 'فشل قبول الطلب.' });
-
-    toast({ title: 'تم القبول', description: 'أنت الآن مسؤول عن هذا الطلب.' });
-    const item = pendingRequests.find(r => r.id === id);
-    setPendingRequests(prev => prev.filter(r => r.id !== id));
-    if (item) setAcceptedRequests(prev => [{ ...item, status: 'accepted' }, ...prev]);
+      .update({
+        status: 'accepted', // أو أي حالة مناسبة، مع الاحتفاظ بالوقت
+        notes: delayReason,
+        expires_at: new Date(Date.now() + 30 * 60000).toISOString() // تمديد 30 دقيقة مثلاً
+      })
+      .eq('id', requestId);
+    if (error) {
+      toast({ description: 'فشل تأجيل الزيارة.' });
+      return;
+    }
+    setMyAssignedRequests(prev => prev.map(r => r.id === requestId ? { ...r, notes: delayReason } : r));
+    toast({ description: 'تم تأجيل الزيارة وإبلاغ العميل.' });
+    setDelayReason('');
   };
 
-  const handleStatus = async (id, newStatus) => {
-    await supabase.from('maintenance_requests').update({ status: newStatus }).eq('id', id);
-    setAcceptedRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
-    toast({ title: 'تم', description: `الحالة أصبحت: ${newStatus}` });
+  const getTimeLeft = (expiresAt) => {
+    if (!expiresAt) return '';
+    const diff = new Date(expiresAt) - new Date();
+    if (diff <= 0) return 'انتهت الصلاحية';
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.clear();
-    navigate('/user-type');
-  };
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Wrench className="animate-bounce" size={48} /> تحميل...</div>;
 
-  // --- عرض شاشة تحميل جميلة ---
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10">
-        <motion.div
-          animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
-          transition={{ repeat: Infinity, duration: 2 }}
-          className="mb-6"
-        >
-          <Wrench size={64} className="text-primary" />
-        </motion.div>
-        <h2 className="text-2xl font-bold text-primary mb-2">جاري تجهيز لوحة الفني</h2>
-        <p className="text-muted-foreground">تحديد الموقع وجلب الطلبات...</p>
-      </div>
-    );
-  }
-
-  // --- الواجهة الرئيسية ---
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5"
-    >
-      {/* هيدر احترافي */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-600">
-            {t('technician')} Dashboard
-          </h1>
-          {technician && (
-            <p className="text-lg font-medium text-foreground/80">
-              {technician.full_name}
-              <span className="ml-2 inline-flex items-center gap-1 text-sm text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                <span className="w-2 h-2 bg-green-500 rounded-full" /> متصل
-              </span>
-            </p>
-          )}
-          {currentLocation && (
-            <p className="text-xs flex items-center gap-1 text-muted-foreground mt-1">
-              <MapPin size={14} /> موقعك نشط
-            </p>
-          )}
-        </div>
-        <Button variant="outline" onClick={handleLogout} className="gap-2">
-          <LogOut size={16} /> {t('logout')}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5">
+      <header className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-primary">لوحة الفني {technician?.full_name}</h1>
+        <Button variant="ghost" onClick={async () => { await supabase.auth.signOut(); localStorage.clear(); navigate('/user-type'); }}>
+          <LogOut className="ltr:mr-2 rtl:ml-2 h-5 w-5" /> خروج
         </Button>
       </header>
 
-      {/* بطاقة الطلبات القريبة */}
+      {/* طلبات قريبة */}
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-2">طلبات قريبة منك</h2>
-        <p className="text-sm text-muted-foreground mb-4">أقل من {MAX_DISTANCE_KM} كم</p>
-
-        {pendingRequests.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-card rounded-2xl p-8 text-center shadow-sm border border-dashed"
-          >
-            <Wrench size={64} className="mx-auto text-muted-foreground/40 mb-4" />
-            <h3 className="text-xl font-semibold mb-2">لا توجد طلبات قريبة حالياً</h3>
-            <p className="text-muted-foreground">ستظهر هنا أي طلبات صيانة جديدة في منطقتك.</p>
-          </motion.div>
-        ) : (
-          <div className="grid gap-4">
-            {pendingRequests.map(req => (
-              <motion.div
-                key={req.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-card rounded-2xl p-5 shadow-md border hover:shadow-lg transition-shadow"
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-xl capitalize">
-                      {t(req.device_type) || req.device_type}
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {req.issue_description}
-                    </p>
-                    <div className="flex flex-wrap gap-3 mt-3 text-xs">
-                      <span className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-full">
-                        <MapPin size={12} /> {req.distance?.toFixed(1)} كم
-                      </span>
-                      <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-full">
-                        <Clock size={12} /> {Math.round((req.distance || 0) / AVG_SPEED_KMH * 60)} دقيقة
-                      </span>
-                      {req.phone_number && (
-                        <span className="flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-1 rounded-full">
-                          <Phone size={12} /> {req.phone_number}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <Button onClick={() => handleAccept(req.id)} className="gap-2">
-                    <Navigation size={16} /> قبول
-                  </Button>
-                </div>
-              </motion.div>
-            ))}
+        <h2 className="text-2xl font-bold mb-2">طلبات قريبة (أقل من {MAX_DISTANCE_KM} كم)</h2>
+        {pendingRequests.length === 0 && <p className="text-muted-foreground">لا توجد طلبات.</p>}
+        {pendingRequests.map(req => (
+          <div key={req.id} className="bg-card p-4 rounded-2xl shadow mb-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-bold">{req.device_type}</h3>
+                <p className="text-sm">{req.issue_description}</p>
+                <p className="text-xs text-muted-foreground">المسافة: {req.distance?.toFixed(1)} كم</p>
+              </div>
+              <Button onClick={() => handlePlaceBid(req.id)} disabled={submittingBid === req.id}>
+                {submittingBid === req.id ? '...' : 'تقديم عرض'}
+              </Button>
+            </div>
           </div>
-        )}
+        ))}
       </section>
 
-      {/* الطلبات النشطة الخاصة بي */}
-      {acceptedRequests.length > 0 && (
+      {/* طلباتي المعينة */}
+      {myAssignedRequests.length > 0 && (
         <section>
-          <h2 className="text-2xl font-bold mb-4">طلباتي النشطة</h2>
-          <div className="grid gap-4">
-            {acceptedRequests.map(req => (
-              <div
-                key={req.id}
-                className="bg-card rounded-2xl p-5 shadow-md border border-primary/20"
-              >
-                <div>
-                  <h3 className="font-bold text-xl">
-                    {t(req.device_type) || req.device_type}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {req.issue_description}
+          <h2 className="text-2xl font-bold mb-4">طلباتي المعينة</h2>
+          {myAssignedRequests.map(req => (
+            <div key={req.id} className="bg-card p-4 rounded-2xl shadow mb-3 border-l-4 border-primary">
+              <h3 className="font-bold">{req.device_type}</h3>
+              <p className="text-sm">{req.issue_description}</p>
+              {req.status === 'assigned' && (
+                <>
+                  <p className="text-xs flex items-center gap-1 text-red-600">
+                    <Clock size={14} /> {getTimeLeft(req.expires_at)}
                   </p>
-                  {req.phone_number && (
-                    <p className="text-sm mt-2 flex items-center gap-1">
-                      <Phone size={14} /> {req.phone_number}
-                    </p>
-                  )}
-                  <p className="text-sm mt-1 font-medium">
-                    الحالة: <span className="text-primary capitalize">{req.status}</span>
-                  </p>
-                </div>
-                <div className="flex gap-2 mt-4 flex-wrap">
-                  {req.status === 'accepted' && (
-                    <Button onClick={() => handleStatus(req.id, 'on_the_way')} className="gap-2">
-                      <Navigation size={16} /> في الطريق
-                    </Button>
-                  )}
-                  {req.status === 'on_the_way' && (
-                    <Button onClick={() => handleStatus(req.id, 'in_progress')} className="gap-2">
-                      <Wrench size={16} /> بدء الإصلاح
-                    </Button>
-                  )}
-                  {req.status === 'in_progress' && (
-                    <Button onClick={() => handleStatus(req.id, 'completed')} className="gap-2">
-                      ✓ إتمام بنجاح
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+                  <div className="flex gap-2 mt-2">
+                    <Button size="sm" onClick={() => handleUpdateStatus(req.id, 'accepted')}>بدء العمل</Button>
+                    <details>
+                      <summary className="text-xs text-blue-600 cursor-pointer">تأجيل</summary>
+                      <div className="flex gap-1 mt-1">
+                        <Input size="sm" placeholder="سبب التأجيل" value={delayReason} onChange={e => setDelayReason(e.target.value)} />
+                        <Button size="sm" onClick={() => handleDelay(req.id)}>تأكيد</Button>
+                      </div>
+                    </details>
+                  </div>
+                </>
+              )}
+              {req.status === 'accepted' && (
+                <>
+                  <p className="text-xs">رقم العميل: {req.phone_number}</p>
+                  <Button className="mt-2" size="sm" onClick={() => handleUpdateStatus(req.id, 'on_the_way')}>في الطريق</Button>
+                </>
+              )}
+              {req.status === 'on_the_way' && (
+                <Button className="mt-2" size="sm" onClick={() => handleUpdateStatus(req.id, 'in_progress')}>بدء الإصلاح</Button>
+              )}
+              {req.status === 'in_progress' && (
+                <Button className="mt-2" size="sm" onClick={() => handleUpdateStatus(req.id, 'completed')}>تم الإصلاح</Button>
+              )}
+              {req.notes && <p className="text-xs text-muted-foreground mt-1">ملاحظة: {req.notes}</p>}
+            </div>
+          ))}
         </section>
       )}
     </motion.div>
