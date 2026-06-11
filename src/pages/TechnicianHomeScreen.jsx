@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import {
   LogOut, MapPin, Clock, Wrench, Phone, Navigation, CheckCircle,
-  RefreshCw, AlertTriangle, Truck, MessageCircle, X
+  RefreshCw, AlertTriangle, Truck, MessageCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, safeRpc } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 
 // --- مكون أمان لالتقاط الأخطاء ---
@@ -61,11 +61,9 @@ const TechnicianHomeScreenContent = () => {
   const [locationStatus, setLocationStatus] = useState('جاري تحديد الموقع...');
   const [chatRequestId, setChatRequestId] = useState(null);
 
-  // تنظيف التعيينات المنتهية (آمن)
+  // تنظيف التعيينات المنتهية باستخدام safeRpc (آمنة تماماً)
   useEffect(() => {
-    if (supabase && typeof supabase.rpc === 'function') {
-      supabase.rpc('expire_stale_assignments').catch(() => {});
-    }
+    safeRpc('expire_stale_assignments');
   }, []);
 
   // جلب بيانات الفني
@@ -160,14 +158,11 @@ const TechnicianHomeScreenContent = () => {
     fetchRequests();
   }, [currentLocation, technician]);
 
-  // جلب الطلبات المعينة للفني
+  // جلب الطلبات المعينة للفني (مع safeRpc)
   useEffect(() => {
     if (!technician) return;
     const fetchAssigned = async () => {
-      // تنظيف آمن للصلاحيات المنتهية
-      if (supabase && typeof supabase.rpc === 'function') {
-        await supabase.rpc('expire_stale_assignments').catch(() => {});
-      }
+      await safeRpc('expire_stale_assignments');
       const { data } = await supabase
         .from('maintenance_requests')
         .select('*, customer:customer_id ( full_name, phone, address )')
