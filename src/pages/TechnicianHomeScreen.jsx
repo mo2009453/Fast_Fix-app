@@ -2,15 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import { LogOut, MapPin, Clock, Wrench, Phone, Navigation, CheckCircle, RefreshCw, AlertTriangle, Truck, User } from 'lucide-react';
+import {
+  LogOut, MapPin, Clock, Wrench, Phone, Navigation, CheckCircle,
+  RefreshCw, AlertTriangle, Truck, MessageCircle, X
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 
-const MAX_DISTANCE_KM = 15;
-
-// مكون أمان لالتقاط الأخطاء
+// --- مكون الأمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -36,6 +37,9 @@ class SafeComponent extends React.Component {
   }
 }
 
+// --- دوال مساعدة ---
+const MAX_DISTANCE_KM = 15;
+
 const getDistance = (lat1, lon1, lat2, lon2) => {
   if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
   const R = 6371;
@@ -45,6 +49,7 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+// --- المحتوى الرئيسي ---
 const TechnicianHomeScreenContent = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -56,10 +61,14 @@ const TechnicianHomeScreenContent = () => {
   const [submittingBid, setSubmittingBid] = useState(null);
   const [delayReason, setDelayReason] = useState('');
   const [locationStatus, setLocationStatus] = useState('جاري تحديد الموقع...');
-  const [chatRequestId, setChatRequestId] = useState(null); // للشات
+  const [chatRequestId, setChatRequestId] = useState(null);
 
+  // تنظيف التعيينات المنتهية (بطريقة آمنة)
   useEffect(() => {
-    supabase.rpc('expire_stale_assignments').catch(() => {});
+    // إذا كانت الدالة rpc متوفرة نستدعيها، وإلا نتجاهل
+    if (supabase && typeof supabase.rpc === 'function') {
+      supabase.rpc('expire_stale_assignments').catch(() => {});
+    }
   }, []);
 
   // جلب بيانات الفني
@@ -85,7 +94,7 @@ const TechnicianHomeScreenContent = () => {
 
       if (!cancelled) {
         setTechnician(tech);
-        // إذا كان لديه موقع مخزن مسبقاً نستخدمه مؤقتاً
+        // استخدام الموقع المخزن كاحتياط
         if (tech.lat && tech.lng) {
           setCurrentLocation({ lat: tech.lat, lng: tech.lng });
           setLocationStatus('تم استخدام الموقع المخزن');
@@ -133,6 +142,7 @@ const TechnicianHomeScreenContent = () => {
 
       if (error) {
         console.error('فشل جلب الطلبات:', error);
+        setIsLoading(false);
         return;
       }
 
@@ -148,7 +158,6 @@ const TechnicianHomeScreenContent = () => {
             distance: getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng),
           }));
       } else {
-        // بدون موقع نعرض الكل مع مسافة غير معروفة
         nearby = data.map((r) => ({ ...r, distance: null }));
       }
       setPendingRequests(nearby);
@@ -161,7 +170,10 @@ const TechnicianHomeScreenContent = () => {
   useEffect(() => {
     if (!technician) return;
     const fetchAssigned = async () => {
-      await supabase.rpc('expire_stale_assignments').catch(() => {});
+      // تنظيف آمن للصلاحيات المنتهية
+      if (supabase && typeof supabase.rpc === 'function') {
+        await supabase.rpc('expire_stale_assignments').catch(() => {});
+      }
       const { data } = await supabase
         .from('maintenance_requests')
         .select('*, customer:customer_id ( full_name, phone, address )')
@@ -255,6 +267,7 @@ const TechnicianHomeScreenContent = () => {
       animate={{ opacity: 1 }}
       className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5"
     >
+      {/* الهيدر */}
       <header className="flex justify-between items-center mb-8 bg-card/50 backdrop-blur-sm p-4 rounded-2xl shadow-lg border">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-white font-bold text-xl">
@@ -363,7 +376,6 @@ const TechnicianHomeScreenContent = () => {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2 items-start">
-                  {/* أزرار التحكم بالحالة */}
                   {req.status === 'assigned' && (
                     <>
                       <Button size="sm" onClick={() => handleUpdateStatus(req.id, 'on_the_way')}>
@@ -389,7 +401,7 @@ const TechnicianHomeScreenContent = () => {
                     </Button>
                   )}
 
-                  {/* زر المحادثة (يظهر بعد التعيين) */}
+                  {/* زر المحادثة */}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -398,10 +410,8 @@ const TechnicianHomeScreenContent = () => {
                     <MessageCircle size={14} className="mr-1" /> محادثة
                   </Button>
 
-                  <dialog
-                    id={`delay-${req.id}`}
-                    className="p-4 rounded-xl shadow-xl"
-                  >
+                  {/* نافذة التأجيل */}
+                  <dialog id={`delay-${req.id}`} className="p-4 rounded-xl shadow-xl">
                     <h3 className="font-bold mb-2">سبب التأجيل</h3>
                     <Input
                       value={delayReason}
@@ -436,7 +446,7 @@ const TechnicianHomeScreenContent = () => {
         </section>
       )}
 
-      {/* نافذة الشات */}
+      {/* نافذة المحادثة */}
       {chatRequestId && technician && (
         <ChatPopup
           requestId={chatRequestId}
