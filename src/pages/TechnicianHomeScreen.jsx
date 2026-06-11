@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 
+// مكون أمان
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -60,7 +61,51 @@ const TechnicianHomeScreenContent = () => {
   const [locationStatus, setLocationStatus] = useState('جاري تحديد الموقع...');
   const [chatRequestId, setChatRequestId] = useState(null);
 
-  // جلب بيانات الفني
+  // دالة جلب الطلبات (يمكن استدعاؤها يدوياً)
+  const fetchRequests = useCallback(async () => {
+    if (!technician) return;
+    setIsLoading(true);
+    try {
+      let query = supabase
+        .from('maintenance_requests')
+        .select('*, customer:customer_id ( full_name, phone, address )')
+        .eq('status', 'pending')
+        .not('lat', 'is', null)
+        .not('lng', 'is', null);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('فشل جلب الطلبات:', error);
+        toast({ description: 'فشل تحميل الطلبات.' });
+        setIsLoading(false);
+        return;
+      }
+
+      let nearby = [];
+      if (currentLocation) {
+        nearby = data
+          .filter((r) => {
+            const dist = getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng);
+            return dist !== null && dist <= MAX_DISTANCE_KM;
+          })
+          .map((r) => ({
+            ...r,
+            distance: getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng),
+          }));
+      } else {
+        // بدون موقع، نعرض كل الطلبات مع مسافة غير معروفة
+        nearby = data.map((r) => ({ ...r, distance: null }));
+      }
+
+      setPendingRequests(nearby);
+    } catch (err) {
+      console.error('خطأ غير متوقع:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [technician, currentLocation, toast]);
+
+  // جلب بيانات الفني مرة واحدة
   useEffect(() => {
     let cancelled = false;
     const init = async () => {
@@ -90,12 +135,12 @@ const TechnicianHomeScreenContent = () => {
     return () => { cancelled = true; };
   }, [navigate, toast]);
 
-  // طلب الموقع الحالي
+  // طلب الموقع الحالي (وتحديثه عند الحاجة)
   useEffect(() => {
     if (!technician) return;
     if (!navigator.geolocation) {
       setLocationStatus('المتصفح لا يدعم الموقع');
-      setIsLoading(false);
+      fetchRequests(); // جلب الطلبات حتى بدون موقع
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -104,54 +149,19 @@ const TechnicianHomeScreenContent = () => {
         setCurrentLocation(loc);
         setLocationStatus('تم تحديد موقعك');
         await supabase.from('technicians').update({ lat: loc.lat, lng: loc.lng }).eq('id', technician.id);
+        fetchRequests(); // جلب الطلبات بعد تحديد الموقع
       },
       () => {
         if (!currentLocation) {
-          setLocationStatus('لم يتم منح إذن الموقع');
+          setLocationStatus('لم يتم منح إذن الموقع - نعرض كل الطلبات');
         }
+        fetchRequests(); // جلب حتى مع رفض الإذن
       },
       { timeout: 10000 }
     );
-  }, [technician]);
+  }, [technician, fetchRequests, currentLocation]);
 
-  // جلب الطلبات المعلقة
-  useEffect(() => {
-    if (!technician) return;
-    const fetchRequests = async () => {
-      const { data, error } = await supabase
-        .from('maintenance_requests')
-        .select('*, customer:customer_id ( full_name, phone, address )')
-        .eq('status', 'pending')
-        .not('lat', 'is', null)
-        .not('lng', 'is', null);
-
-      if (error) {
-        console.error('فشل جلب الطلبات:', error);
-        setIsLoading(false);
-        return;
-      }
-
-      let nearby = [];
-      if (currentLocation) {
-        nearby = data
-          .filter((r) => {
-            const dist = getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng);
-            return dist !== null && dist <= MAX_DISTANCE_KM;
-          })
-          .map((r) => ({
-            ...r,
-            distance: getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng),
-          }));
-      } else {
-        nearby = data.map((r) => ({ ...r, distance: null }));
-      }
-      setPendingRequests(nearby);
-      setIsLoading(false);
-    };
-    fetchRequests();
-  }, [currentLocation, technician]);
-
-  // جلب الطلبات المعينة للفني (بدون تنظيف rpc)
+  // جلب الطلبات المعينة للفني
   useEffect(() => {
     if (!technician) return;
     const fetchAssigned = async () => {
@@ -224,11 +234,10 @@ const TechnicianHomeScreenContent = () => {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  if (isLoading) {
+  if (!technician && isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient">
-        <RefreshCw className="animate-spin text-primary mb-4" size={48} />
-        <p className="text-lg">جاري تحميل لوحة الفني...</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <RefreshCw className="animate-spin text-primary" size={32} />
       </div>
     );
   }
@@ -237,7 +246,7 @@ const TechnicianHomeScreenContent = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <AlertTriangle size={48} className="text-red-500" />
-        <p className="mr-2">تعذر تحميل بيانات الفني</p>
+        <p className="mr-2">لا يمكن تحميل بيانات الفني.</p>
       </div>
     );
   }
@@ -272,14 +281,26 @@ const TechnicianHomeScreenContent = () => {
         </Button>
       </header>
 
+      {/* زر إعادة تحميل الطلبات */}
+      <div className="flex justify-end mb-4">
+        <Button variant="outline" size="sm" onClick={fetchRequests} disabled={isLoading}>
+          <RefreshCw size={16} className="mr-1" /> تحديث الطلبات
+        </Button>
+      </div>
+
       <section className="mb-8">
         <h2 className="text-2xl font-bold mb-4">طلبات قريبة</h2>
         {!currentLocation && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm mb-4">
-            <AlertTriangle className="inline text-yellow-600" size={16} /> لم يتم تحديد موقعك بدقة. قد تظهر طلبات خارج نطاقك.
+            <AlertTriangle className="inline text-yellow-600" size={16} /> لم يتم تحديد موقعك بدقة – نعرض جميع الطلبات المتاحة حالياً.
           </div>
         )}
-        {pendingRequests.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-8">
+            <RefreshCw className="animate-spin text-primary mx-auto mb-2" size={32} />
+            <p>جاري تحميل الطلبات...</p>
+          </div>
+        ) : pendingRequests.length === 0 ? (
           <div className="text-center bg-card rounded-2xl p-8 shadow-sm border border-dashed">
             <Wrench size={48} className="mx-auto text-muted-foreground/40 mb-4" />
             <p className="text-muted-foreground">لا توجد طلبات صيانة متاحة حالياً.</p>
@@ -305,6 +326,11 @@ const TechnicianHomeScreenContent = () => {
                       {req.distance ? Math.round(req.distance / 30) * 60 : '؟'} دقيقة
                     </span>
                   </div>
+                  {req.address && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      📍 {req.address}
+                    </p>
+                  )}
                 </div>
                 <Button
                   onClick={() => handlePlaceBid(req.id)}
@@ -318,6 +344,7 @@ const TechnicianHomeScreenContent = () => {
         )}
       </section>
 
+      {/* طلباتي النشطة (نفس التصميم السابق) */}
       {myAssignedRequests.length > 0 && (
         <section>
           <h2 className="text-2xl font-bold mb-4">طلباتي النشطة</h2>
