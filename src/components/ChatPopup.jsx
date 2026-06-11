@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { X, Send, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
-// فلتر لمنع الأرقام
+// فلتر لمنع مشاركة الأرقام
 const filterPhoneNumbers = (text) => {
   const phoneRegex = /01[0-2,5]{1}[0-9]{8}/g;
   return text.replace(phoneRegex, '***');
@@ -15,12 +15,12 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
   const [newMsg, setNewMsg] = useState('');
   const [chatId, setChatId] = useState(null);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
   const bottomRef = useRef(null);
 
+  // 1. إنشاء أو جلب الشات
   useEffect(() => {
-    let cancelled = false;
     const initChat = async () => {
-      // جلب أو إنشاء chat
       let { data: chat, error } = await supabase
         .from('chats')
         .select('id')
@@ -28,7 +28,7 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
         .maybeSingle();
 
       if (error) {
-        console.error('خطأ جلب المحادثة:', error);
+        setError('فشل الاتصال بقاعدة البيانات.');
         return;
       }
 
@@ -38,36 +38,30 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
           .insert({ request_id: requestId })
           .select('id')
           .single();
+
         if (insertErr) {
-          console.error('خطأ إنشاء محادثة:', insertErr);
+          setError('فشل إنشاء المحادثة.');
           return;
         }
         chat = newChat;
       }
 
-      if (!cancelled) {
-        setChatId(chat.id);
+      setChatId(chat.id);
 
-        // تحميل الرسائل
-        const { data: msgs, error: msgsErr } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('chat_id', chat.id)
-          .order('created_at', { ascending: true });
+      // تحميل الرسائل
+      const { data: msgs, error: msgsErr } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chat.id)
+        .order('created_at', { ascending: true });
 
-        if (msgsErr) {
-          console.error('خطأ جلب الرسائل:', msgsErr);
-        } else if (msgs) {
-          setMessages(msgs);
-        }
-      }
+      if (!msgsErr && msgs) setMessages(msgs);
     };
 
     initChat();
-    return () => { cancelled = true; };
   }, [requestId]);
 
-  // الاشتراك في الرسائل الجديدة (Realtime)
+  // 2. اشتراك Realtime لاستقبال الرسائل الجديدة
   useEffect(() => {
     if (!chatId) return;
 
@@ -92,15 +86,20 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
     };
   }, [chatId]);
 
+  // 3. التمرير لأسفل عند وصول رسالة جديدة
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // 4. إرسال رسالة
   const handleSend = async () => {
     if (!newMsg.trim() || !chatId || !currentUser?.id) return;
 
     setSending(true);
+    setError('');
+
     const filtered = filterPhoneNumbers(newMsg);
+
     const { error } = await supabase.from('messages').insert({
       chat_id: chatId,
       sender_id: currentUser.id,
@@ -111,24 +110,29 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
 
     if (error) {
       console.error('فشل إرسال الرسالة:', error);
-      alert('فشل الإرسال: ' + error.message);
+      setError('فشل الإرسال: ' + error.message);
     } else {
       setNewMsg('');
     }
+
     setSending(false);
   };
 
   return (
     <div className="fixed bottom-4 right-4 w-80 h-96 bg-card rounded-2xl shadow-2xl border flex flex-col z-50">
+      {/* رأس المحادثة */}
       <div className="flex justify-between items-center p-3 border-b">
         <h3 className="font-bold text-sm">محادثة الطلب #{requestId}</h3>
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X size={16} />
         </Button>
       </div>
+
+      {/* جسم المحادثة */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {messages.length === 0 && (
-          <p className="text-center text-xs text-muted-foreground">لا توجد رسائل بعد.</p>
+        {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+        {messages.length === 0 && !error && (
+          <p className="text-xs text-center text-muted-foreground">لا توجد رسائل. ابدأ المحادثة.</p>
         )}
         {messages.map((msg) => (
           <div
@@ -137,9 +141,7 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
           >
             <div
               className={`max-w-[80%] p-2 rounded-lg text-sm ${
-                msg.sender_id === currentUser?.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted'
+                msg.sender_id === currentUser?.id ? 'bg-primary text-white' : 'bg-muted'
               }`}
             >
               {msg.filtered_message}
@@ -148,6 +150,8 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/* حقل الإرسال */}
       <div className="p-3 border-t flex gap-2">
         <Input
           value={newMsg}
