@@ -2,14 +2,27 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import {
-  Shield, UserCheck, Clock, DollarSign, RefreshCw, Users, Wrench, Activity,
-  FileText, Download, Eye, Ban, CheckCircle, XCircle, UserX, UserPlus, Search,
-  BarChart2, TrendingUp, AlertTriangle, MessageCircle, Phone, MapPin, Calendar, Star
+  Shield, Clock, DollarSign, RefreshCw, Users, Wrench, Activity,
+  FileText, Download, Eye, BarChart2, XCircle, CheckCircle
 } from 'lucide-react';
+
+// مكون Badge محلي (بديل عن الاستيراد المفقود)
+const Badge = ({ children, variant = 'default' }) => {
+  const colors = {
+    success: 'bg-green-100 text-green-800',
+    warning: 'bg-yellow-100 text-yellow-800',
+    destructive: 'bg-red-100 text-red-800',
+    default: 'bg-gray-100 text-gray-800',
+  };
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${colors[variant] || colors.default}`}>
+      {children}
+    </span>
+  );
+};
 
 // دالة مساعدة لتصدير CSV
 const exportToCSV = (data, filename) => {
@@ -37,7 +50,6 @@ const AdminPanel = () => {
 
   // بيانات
   const [stats, setStats] = useState({ technicians: 0, customers: 0, requests: 0, pendingRecharges: 0 });
-  const [technicians, setTechnicians] = useState([]);
   const [allTechnicians, setAllTechnicians] = useState([]);
   const [requests, setRequests] = useState([]);
   const [recharges, setRecharges] = useState([]);
@@ -45,10 +57,9 @@ const AdminPanel = () => {
   const [logs, setLogs] = useState([]);
 
   // فلترة
-  const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // عرض تفاصيل فني
+  // عرض تفاصيل
   const [selectedTechnician, setSelectedTechnician] = useState(null);
   const [selectedRequest, setSelectedRequest] = useState(null);
 
@@ -78,14 +89,12 @@ const AdminPanel = () => {
 
       // الجداول
       const { data: techs } = await supabase.from('technicians').select('*').order('created_at', { ascending: false });
-      const { data: allTechs } = await supabase.from('technicians').select('*').order('created_at', { ascending: false });
       const { data: reqs } = await supabase.from('maintenance_requests').select('*').order('created_at', { ascending: false });
       const { data: recs } = await supabase.from('recharge_requests').select('*').order('created_at', { ascending: false });
       const { data: custs } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
       const { data: logsData } = await supabase.from('admin_logs').select('*').order('created_at', { ascending: false }).limit(50);
 
-      setTechnicians(techs || []);
-      setAllTechnicians(allTechs || []);
+      setAllTechnicians(techs || []);
       setRequests(reqs || []);
       setRecharges(recs || []);
       setCustomers(custs || []);
@@ -171,7 +180,7 @@ const AdminPanel = () => {
       <div className="flex flex-wrap gap-2 mb-6">
         {[
           { key: 'dashboard', label: 'الإحصائيات', icon: <BarChart2 size={16} /> },
-          { key: 'technicians', label: 'الفنيين', icon: <Wrench size={16} />, badge: technicians.filter(t => t.status === 'pending_review').length },
+          { key: 'technicians', label: 'الفنيين', icon: <Wrench size={16} />, badge: allTechnicians.filter(t => t.status === 'pending_review').length },
           { key: 'requests', label: 'الطلبات', icon: <FileText size={16} /> },
           { key: 'recharges', label: 'الشحن', icon: <DollarSign size={16} />, badge: stats.pendingRecharges },
           { key: 'customers', label: 'العملاء', icon: <Users size={16} /> },
