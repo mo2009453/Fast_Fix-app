@@ -17,6 +17,7 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
+  const audioRef = useRef(null); // للإشعار الصوتي
 
   // 1. إنشاء أو جلب الشات
   useEffect(() => {
@@ -61,7 +62,7 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
     initChat();
   }, [requestId]);
 
-  // 2. اشتراك Realtime لاستقبال الرسائل الجديدة
+  // 2. اشتراك Realtime للرسائل الواردة
   useEffect(() => {
     if (!chatId) return;
 
@@ -76,7 +77,16 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          const newMessage = payload.new;
+          // لا تضف الرسالة إذا كان المرسل هو المستخدم الحالي (لأننا أضفناها يدويًا)
+          if (newMessage.sender_id === currentUser?.id) return;
+
+          setMessages((prev) => [...prev, newMessage]);
+
+          // تشغيل صوت الإشعار للرسائل الواردة
+          if (audioRef.current) {
+            audioRef.current.play().catch(() => {});
+          }
         }
       )
       .subscribe();
@@ -84,9 +94,9 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
     return () => {
       supabase.removeChannel(channel).catch(console.error);
     };
-  }, [chatId]);
+  }, [chatId, currentUser?.id]);
 
-  // 3. التمرير لأسفل عند وصول رسالة جديدة
+  // 3. تمرير تلقائي لأسفل عند تحديث الرسائل
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -100,18 +110,25 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
 
     const filtered = filterPhoneNumbers(newMsg);
 
-    const { error } = await supabase.from('messages').insert({
-      chat_id: chatId,
-      sender_id: currentUser.id,
-      sender_type: currentUser.userType,
-      message: newMsg,
-      filtered_message: filtered,
-    });
+    // إدراج الرسالة واسترجاعها كاملة
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        chat_id: chatId,
+        sender_id: currentUser.id,
+        sender_type: currentUser.userType,
+        message: newMsg,
+        filtered_message: filtered,
+      })
+      .select('*')
+      .single();
 
     if (error) {
       console.error('فشل إرسال الرسالة:', error);
       setError('فشل الإرسال: ' + error.message);
-    } else {
+    } else if (data) {
+      // أضف الرسالة مباشرة إلى القائمة (لتظهر فوراً)
+      setMessages((prev) => [...prev, data]);
       setNewMsg('');
     }
 
@@ -120,6 +137,9 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
 
   return (
     <div className="fixed bottom-4 right-4 w-80 h-96 bg-card rounded-2xl shadow-2xl border flex flex-col z-50">
+      {/* صوت الإشعار (مخفي) */}
+      <audio ref={audioRef} src="/notification.mp3" preload="auto" />
+
       {/* رأس المحادثة */}
       <div className="flex justify-between items-center p-3 border-b">
         <h3 className="font-bold text-sm">محادثة الطلب #{requestId}</h3>
@@ -129,25 +149,43 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
       </div>
 
       {/* جسم المحادثة */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {error && <p className="text-xs text-red-500 text-center">{error}</p>}
         {messages.length === 0 && !error && (
-          <p className="text-xs text-center text-muted-foreground">لا توجد رسائل. ابدأ المحادثة.</p>
+          <p className="text-xs text-center text-muted-foreground">
+            لا توجد رسائل. ابدأ المحادثة.
+          </p>
         )}
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.sender_id === currentUser?.id ? 'justify-end' : 'justify-start'}`}
-          >
+        {messages.map((msg) => {
+          const isMine = msg.sender_id === currentUser?.id;
+          return (
             <div
-              className={`max-w-[80%] p-2 rounded-lg text-sm ${
-                msg.sender_id === currentUser?.id ? 'bg-primary text-white' : 'bg-muted'
-              }`}
+              key={msg.id}
+              className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
             >
-              {msg.filtered_message}
+              <div
+                className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                  isMine
+                    ? 'bg-primary text-white rounded-br-md'
+                    : 'bg-muted text-foreground rounded-bl-md'
+                }`}
+              >
+                {!isMine && (
+                  <p className="text-[10px] font-semibold text-muted-foreground mb-1">
+                    {msg.sender_type === 'technician' ? 'الفني' : 'العميل'}
+                  </p>
+                )}
+                <p>{msg.filtered_message}</p>
+                <span className="text-[10px] opacity-70 block text-right mt-1">
+                  {new Date(msg.created_at).toLocaleTimeString('ar-EG', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
@@ -160,7 +198,11 @@ const ChatPopup = ({ requestId, currentUser, onClose }) => {
           placeholder="اكتب رسالة..."
           disabled={sending}
         />
-        <Button size="sm" onClick={handleSend} disabled={sending || !newMsg.trim()}>
+        <Button
+          size="sm"
+          onClick={handleSend}
+          disabled={sending || !newMsg.trim()}
+        >
           {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </Button>
       </div>
