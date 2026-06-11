@@ -8,10 +8,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
-import { supabase, safeRpc } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 
-// --- مكون أمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -61,11 +60,6 @@ const TechnicianHomeScreenContent = () => {
   const [locationStatus, setLocationStatus] = useState('جاري تحديد الموقع...');
   const [chatRequestId, setChatRequestId] = useState(null);
 
-  // تنظيف التعيينات المنتهية باستخدام safeRpc (آمنة تماماً)
-  useEffect(() => {
-    safeRpc('expire_stale_assignments');
-  }, []);
-
   // جلب بيانات الفني
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +80,6 @@ const TechnicianHomeScreenContent = () => {
 
       if (!cancelled) {
         setTechnician(tech);
-        // استخدام الموقع المخزن كاحتياط
         if (tech.lat && tech.lng) {
           setCurrentLocation({ lat: tech.lat, lng: tech.lng });
           setLocationStatus('تم استخدام الموقع المخزن');
@@ -158,11 +151,10 @@ const TechnicianHomeScreenContent = () => {
     fetchRequests();
   }, [currentLocation, technician]);
 
-  // جلب الطلبات المعينة للفني (مع safeRpc)
+  // جلب الطلبات المعينة للفني (بدون تنظيف rpc)
   useEffect(() => {
     if (!technician) return;
     const fetchAssigned = async () => {
-      await safeRpc('expire_stale_assignments');
       const { data } = await supabase
         .from('maintenance_requests')
         .select('*, customer:customer_id ( full_name, phone, address )')
@@ -256,7 +248,6 @@ const TechnicianHomeScreenContent = () => {
       animate={{ opacity: 1 }}
       className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5"
     >
-      {/* الهيدر */}
       <header className="flex justify-between items-center mb-8 bg-card/50 backdrop-blur-sm p-4 rounded-2xl shadow-lg border">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-white font-bold text-xl">
@@ -281,7 +272,6 @@ const TechnicianHomeScreenContent = () => {
         </Button>
       </header>
 
-      {/* طلبات قريبة */}
       <section className="mb-8">
         <h2 className="text-2xl font-bold mb-4">طلبات قريبة</h2>
         {!currentLocation && (
@@ -328,7 +318,6 @@ const TechnicianHomeScreenContent = () => {
         )}
       </section>
 
-      {/* طلباتي النشطة */}
       {myAssignedRequests.length > 0 && (
         <section>
           <h2 className="text-2xl font-bold mb-4">طلباتي النشطة</h2>
@@ -390,7 +379,6 @@ const TechnicianHomeScreenContent = () => {
                     </Button>
                   )}
 
-                  {/* زر المحادثة */}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -399,7 +387,6 @@ const TechnicianHomeScreenContent = () => {
                     <MessageCircle size={14} className="mr-1" /> محادثة
                   </Button>
 
-                  {/* نافذة التأجيل */}
                   <dialog id={`delay-${req.id}`} className="p-4 rounded-xl shadow-xl">
                     <h3 className="font-bold mb-2">سبب التأجيل</h3>
                     <Input
@@ -435,7 +422,6 @@ const TechnicianHomeScreenContent = () => {
         </section>
       )}
 
-      {/* نافذة المحادثة */}
       {chatRequestId && technician && (
         <ChatPopup
           requestId={chatRequestId}
