@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
-import { LogOut, MapPin, Clock, Star, Phone } from 'lucide-react';
+import { LogOut, MapPin, Clock, Star, Phone, User, Home, Settings } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
@@ -19,7 +19,6 @@ const deviceTypes = [
   { value: 'airConditioner', labelKey: 'airConditioner' },
 ];
 
-// حساب المسافة
 const getDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
   const R = 6371;
@@ -34,17 +33,16 @@ const CustomerHomeScreen = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [currentUserEmail, setCurrentUserEmail] = useState('');
+  const [customer, setCustomer] = useState(null);
   const [customerBalance, setCustomerBalance] = useState(0);
   const [maintenanceRequest, setMaintenanceRequest] = useState({
-    deviceType: '', issueDescription: '', phoneNumber: '', lat: null, lng: null,
+    deviceType: '', issueDescription: '', phoneNumber: '', address: '', lat: null, lng: null,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [activeRequests, setActiveRequests] = useState([]);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [biddersMap, setBiddersMap] = useState({});
 
-  // تنظيف التعيينات المنتهية الصلاحية عند تحميل الصفحة
   useEffect(() => {
     supabase.rpc('expire_stale_assignments');
   }, []);
@@ -53,10 +51,13 @@ const CustomerHomeScreen = () => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/login/customer'); return; }
-      setCurrentUserEmail(user.email);
 
-      const { data: cust } = await supabase.from('customers').select('balance').eq('id', user.id).single();
-      if (cust) setCustomerBalance(cust.balance);
+      const { data: cust } = await supabase.from('customers').select('*').eq('id', user.id).single();
+      if (cust) {
+        setCustomer(cust);
+        setCustomerBalance(cust.balance);
+        setMaintenanceRequest(prev => ({ ...prev, phoneNumber: cust.phone || '' }));
+      }
 
       const { data: requests } = await supabase
         .from('maintenance_requests')
@@ -119,6 +120,7 @@ const CustomerHomeScreen = () => {
       device_type: maintenanceRequest.deviceType,
       issue_description: maintenanceRequest.issueDescription,
       phone_number: maintenanceRequest.phoneNumber,
+      address: maintenanceRequest.address,
       lat: maintenanceRequest.lat,
       lng: maintenanceRequest.lng,
       status: 'pending'
@@ -128,14 +130,13 @@ const CustomerHomeScreen = () => {
     else {
       toast({ description: 'تم إرسال الطلب!' });
       setActiveRequests(prev => [data[0], ...prev]);
-      setMaintenanceRequest({ deviceType: '', issueDescription: '', phoneNumber: '', lat: null, lng: null });
+      setMaintenanceRequest(prev => ({ ...prev, deviceType: '', issueDescription: '', address: '' }));
     }
   };
 
-  // --- دالة اختيار الفني (تم تعديلها لاظهار الخطأ) ---
   const handleSelectTechnician = async (requestId, technicianId) => {
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 10 * 60000); // 10 دقائق
+    const expiresAt = new Date(now.getTime() + 10 * 60000);
     const { data, error } = await supabase
       .from('maintenance_requests')
       .update({
@@ -146,17 +147,15 @@ const CustomerHomeScreen = () => {
       })
       .eq('id', requestId)
       .eq('customer_id', (await supabase.auth.getUser()).data.user.id)
-      .select(); // أضفنا select() لنرى البيانات المرتجعة
+      .select();
 
     if (error) {
-      // عرض رسالة الخطأ كاملة من Supabase
       toast({
         title: 'فشل تأكيد الفني',
         description: `الخطأ: ${error.message} (كود: ${error.code})`,
         variant: 'destructive'
       });
     } else if (!data || data.length === 0) {
-      // لم يتم تحديث أي صف، ربما لأن الشرط لم يتحقق
       toast({
         title: 'فشل تأكيد الفني',
         description: 'لم يتم العثور على الطلب أو ليس لديك صلاحية تعديله.',
@@ -168,7 +167,6 @@ const CustomerHomeScreen = () => {
     }
   };
 
-  // حساب الوقت المتبقي
   const getTimeLeft = (expiresAt) => {
     if (!expiresAt) return '';
     const diff = new Date(expiresAt) - new Date();
@@ -180,16 +178,27 @@ const CustomerHomeScreen = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5">
-      <header className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-primary">{t('customer')} {t('home')}</h1>
+      {/* هيدر سحري */}
+      <header className="flex justify-between items-center mb-8 bg-card/50 backdrop-blur-sm p-4 rounded-2xl shadow-lg border">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
+            {customer?.full_name?.charAt(0) || 'ع'}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-primary">أهلاً {customer?.full_name}</h1>
+            <p className="text-xs text-muted-foreground">الرصيد: {customerBalance} جنيه</p>
+          </div>
+        </div>
         <Button variant="ghost" onClick={() => { localStorage.clear(); navigate('/user-type'); }}>
-          <LogOut className="ltr:mr-2 rtl:ml-2 h-5 w-5" /> {t('logout')}
+          <LogOut className="ltr:mr-2 rtl:ml-2 h-5 w-5" /> خروج
         </Button>
       </header>
 
       {/* نموذج طلب جديد */}
       <div className="bg-card p-6 rounded-2xl shadow mb-8">
-        <h2 className="text-2xl font-bold mb-4">طلب صيانة جديد</h2>
+        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+          <Settings className="text-primary" /> طلب صيانة جديد
+        </h2>
         <div className="space-y-4">
           <div>
             <Label>نوع الجهاز</Label>
@@ -202,9 +211,15 @@ const CustomerHomeScreen = () => {
             <Label>وصف العطل</Label>
             <Input value={maintenanceRequest.issueDescription} onChange={e => handleFieldChange('issueDescription', e.target.value)} />
           </div>
-          <div>
-            <Label>رقم الهاتف</Label>
-            <Input value={maintenanceRequest.phoneNumber} onChange={e => handleFieldChange('phoneNumber', e.target.value)} />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>رقم الهاتف الأساسي</Label>
+              <Input value={maintenanceRequest.phoneNumber} onChange={e => handleFieldChange('phoneNumber', e.target.value)} />
+            </div>
+            <div>
+              <Label>العنوان التفصيلي</Label>
+              <Input value={maintenanceRequest.address} onChange={e => handleFieldChange('address', e.target.value)} placeholder="الشارع، المنطقة..." />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleGetLocation} disabled={gettingLocation}><MapPin size={16} /> تحديد الموقع</Button>
@@ -216,22 +231,34 @@ const CustomerHomeScreen = () => {
 
       {/* عرض الطلبات النشطة والعروض */}
       {activeRequests.map(request => (
-        <div key={request.id} className="bg-card p-6 rounded-2xl shadow mb-6">
-          <h3 className="font-bold text-xl">{t(request.device_type)} - <span className="text-sm text-muted-foreground">{request.status}</span></h3>
+        <motion.div key={request.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card p-6 rounded-2xl shadow mb-6">
+          <h3 className="font-bold text-xl flex items-center gap-2">
+            <Wrench size={20} className="text-primary" /> {t(request.device_type)}
+          </h3>
           <p className="text-sm mt-1">{request.issue_description}</p>
-          <p className="text-xs text-muted-foreground">هاتفك: {request.phone_number}</p>
+          <div className="flex gap-4 text-xs text-muted-foreground mt-2">
+            <span>📞 {request.phone_number}</span>
+            {request.address && <span>📍 {request.address}</span>}
+          </div>
 
           {(request.status === 'pending' || request.status === 'bidding') && biddersMap[request.id] && (
             <div className="mt-4 border-t pt-4">
-              <h4 className="font-semibold mb-2">الفنيون المتقدمون:</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2">
+                <User size={16} /> الفنيون المتقدمون
+              </h4>
               <div className="space-y-2">
                 {biddersMap[request.id].map((tech, idx) => (
-                  <div key={idx} className="flex justify-between items-center border rounded-lg p-3">
-                    <div>
-                      <p className="font-medium">{tech.full_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        المسافة: {tech.distance?.toFixed(1)} كم | {tech.specialization} | ★ 4.5
-                      </p>
+                  <div key={idx} className="flex justify-between items-center border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-600 flex items-center justify-center text-white text-sm">
+                        {tech.full_name?.charAt(0) || 'ف'}
+                      </div>
+                      <div>
+                        <p className="font-medium">{tech.full_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          🚗 {tech.distance?.toFixed(1)} كم | {tech.specialization} | ★ 4.5
+                        </p>
+                      </div>
                     </div>
                     <Button size="sm" onClick={() => handleSelectTechnician(request.id, tech.id)}>اختيار</Button>
                   </div>
@@ -242,7 +269,7 @@ const CustomerHomeScreen = () => {
 
           {request.status === 'assigned' && (
             <div className="mt-4 border-t pt-4">
-              <p className="font-medium text-green-700">تم تعيين فني للطلب.</p>
+              <p className="font-medium text-green-700">✅ تم تعيين فني للطلب.</p>
               {request.expires_at && (
                 <p className="text-xs flex items-center gap-1 mt-1">
                   <Clock size={14} /> الوقت المتبقي: {getTimeLeft(request.expires_at)}
@@ -250,7 +277,7 @@ const CustomerHomeScreen = () => {
               )}
             </div>
           )}
-        </div>
+        </motion.div>
       ))}
     </motion.div>
   );
