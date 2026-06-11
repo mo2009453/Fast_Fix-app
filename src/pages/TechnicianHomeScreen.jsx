@@ -61,22 +61,20 @@ const TechnicianHomeScreenContent = () => {
   const [locationStatus, setLocationStatus] = useState('جاري تحديد الموقع...');
   const [chatRequestId, setChatRequestId] = useState(null);
 
-  // دالة جلب الطلبات (يمكن استدعاؤها يدوياً)
-  const fetchRequests = useCallback(async () => {
+  // دالة جلب الطلبات المعلقة (يمكن استدعاؤها يدوياً)
+  const fetchPendingRequests = useCallback(async () => {
     if (!technician) return;
     setIsLoading(true);
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('maintenance_requests')
         .select('*, customer:customer_id ( full_name, phone, address )')
         .eq('status', 'pending')
-        .not('lat', 'is', null)
-        .not('lng', 'is', null);
+        .order('created_at', { ascending: false });
 
-      const { data, error } = await query;
       if (error) {
         console.error('فشل جلب الطلبات:', error);
-        toast({ description: 'فشل تحميل الطلبات.' });
+        toast({ description: 'فشل تحميل الطلبات. حاول مرة أخرى.' });
         setIsLoading(false);
         return;
       }
@@ -85,6 +83,7 @@ const TechnicianHomeScreenContent = () => {
       if (currentLocation) {
         nearby = data
           .filter((r) => {
+            if (r.lat == null || r.lng == null) return false;
             const dist = getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng);
             return dist !== null && dist <= MAX_DISTANCE_KM;
           })
@@ -93,7 +92,7 @@ const TechnicianHomeScreenContent = () => {
             distance: getDistance(currentLocation.lat, currentLocation.lng, r.lat, r.lng),
           }));
       } else {
-        // بدون موقع، نعرض كل الطلبات مع مسافة غير معروفة
+        // بدون موقع: نعرض كل الطلبات مع مسافة غير معروفة
         nearby = data.map((r) => ({ ...r, distance: null }));
       }
 
@@ -105,7 +104,7 @@ const TechnicianHomeScreenContent = () => {
     }
   }, [technician, currentLocation, toast]);
 
-  // جلب بيانات الفني مرة واحدة
+  // جلب بيانات الفني
   useEffect(() => {
     let cancelled = false;
     const init = async () => {
@@ -117,14 +116,15 @@ const TechnicianHomeScreenContent = () => {
         .eq('id', user.id)
         .single();
 
-      if (techErr || !tech || tech.status !== 'approved') {
-        toast({ title: 'خطأ', description: 'حسابك قيد المراجعة أو غير موجود.' });
+      if (techErr || !tech) {
+        toast({ title: 'خطأ', description: 'تعذر تحميل بياناتك.' });
         navigate('/login/technician');
         return;
       }
 
       if (!cancelled) {
         setTechnician(tech);
+        // استخدام الموقع المخزن مبدئياً
         if (tech.lat && tech.lng) {
           setCurrentLocation({ lat: tech.lat, lng: tech.lng });
           setLocationStatus('تم استخدام الموقع المخزن');
@@ -135,12 +135,12 @@ const TechnicianHomeScreenContent = () => {
     return () => { cancelled = true; };
   }, [navigate, toast]);
 
-  // طلب الموقع الحالي (وتحديثه عند الحاجة)
+  // طلب الموقع وجلب الطلبات بعد ذلك
   useEffect(() => {
     if (!technician) return;
     if (!navigator.geolocation) {
       setLocationStatus('المتصفح لا يدعم الموقع');
-      fetchRequests(); // جلب الطلبات حتى بدون موقع
+      fetchPendingRequests();
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -149,17 +149,15 @@ const TechnicianHomeScreenContent = () => {
         setCurrentLocation(loc);
         setLocationStatus('تم تحديد موقعك');
         await supabase.from('technicians').update({ lat: loc.lat, lng: loc.lng }).eq('id', technician.id);
-        fetchRequests(); // جلب الطلبات بعد تحديد الموقع
+        fetchPendingRequests();
       },
       () => {
-        if (!currentLocation) {
-          setLocationStatus('لم يتم منح إذن الموقع - نعرض كل الطلبات');
-        }
-        fetchRequests(); // جلب حتى مع رفض الإذن
+        setLocationStatus('لم يتم منح إذن الموقع - نعرض جميع الطلبات');
+        fetchPendingRequests();
       },
       { timeout: 10000 }
     );
-  }, [technician, fetchRequests, currentLocation]);
+  }, [technician, fetchPendingRequests]);
 
   // جلب الطلبات المعينة للفني
   useEffect(() => {
@@ -281,18 +279,19 @@ const TechnicianHomeScreenContent = () => {
         </Button>
       </header>
 
-      {/* زر إعادة تحميل الطلبات */}
+      {/* زر تحديث يدوي */}
       <div className="flex justify-end mb-4">
-        <Button variant="outline" size="sm" onClick={fetchRequests} disabled={isLoading}>
+        <Button variant="outline" size="sm" onClick={fetchPendingRequests} disabled={isLoading}>
           <RefreshCw size={16} className="mr-1" /> تحديث الطلبات
         </Button>
       </div>
 
+      {/* طلبات قريبة */}
       <section className="mb-8">
         <h2 className="text-2xl font-bold mb-4">طلبات قريبة</h2>
         {!currentLocation && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm mb-4">
-            <AlertTriangle className="inline text-yellow-600" size={16} /> لم يتم تحديد موقعك بدقة – نعرض جميع الطلبات المتاحة حالياً.
+            <AlertTriangle className="inline text-yellow-600" size={16} /> لم يتم تحديد موقعك – نعرض جميع الطلبات المتاحة.
           </div>
         )}
         {isLoading ? (
@@ -344,7 +343,7 @@ const TechnicianHomeScreenContent = () => {
         )}
       </section>
 
-      {/* طلباتي النشطة (نفس التصميم السابق) */}
+      {/* طلباتي النشطة */}
       {myAssignedRequests.length > 0 && (
         <section>
           <h2 className="text-2xl font-bold mb-4">طلباتي النشطة</h2>
