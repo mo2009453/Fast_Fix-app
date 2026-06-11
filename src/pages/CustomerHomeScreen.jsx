@@ -132,10 +132,11 @@ const CustomerHomeScreen = () => {
     }
   };
 
+  // --- دالة اختيار الفني (تم تعديلها لاظهار الخطأ) ---
   const handleSelectTechnician = async (requestId, technicianId) => {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 10 * 60000); // 10 دقائق
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('maintenance_requests')
       .update({
         technician_id: technicianId,
@@ -144,11 +145,25 @@ const CustomerHomeScreen = () => {
         expires_at: expiresAt.toISOString()
       })
       .eq('id', requestId)
-      .eq('customer_id', (await supabase.auth.getUser()).data.user.id);
+      .eq('customer_id', (await supabase.auth.getUser()).data.user.id)
+      .select(); // أضفنا select() لنرى البيانات المرتجعة
 
-    if (error) toast({ description: 'فشل تأكيد الفني.' });
-    else {
-      toast({ description: 'تم تعيين الفني. أمامه 10 دقائق للبدء.' });
+    if (error) {
+      // عرض رسالة الخطأ كاملة من Supabase
+      toast({
+        title: 'فشل تأكيد الفني',
+        description: `الخطأ: ${error.message} (كود: ${error.code})`,
+        variant: 'destructive'
+      });
+    } else if (!data || data.length === 0) {
+      // لم يتم تحديث أي صف، ربما لأن الشرط لم يتحقق
+      toast({
+        title: 'فشل تأكيد الفني',
+        description: 'لم يتم العثور على الطلب أو ليس لديك صلاحية تعديله.',
+        variant: 'destructive'
+      });
+    } else {
+      toast({ title: 'تم', description: 'تم تعيين الفني. أمامه 10 دقائق للبدء.' });
       setActiveRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'assigned', technician_id: technicianId, expires_at: expiresAt.toISOString() } : r));
     }
   };
