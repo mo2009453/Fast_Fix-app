@@ -12,9 +12,11 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
+import AdminPanel from '@/components/AdminPanel.jsx'; // <-- استيراد لوحة الأدمن
 
 const VISIT_FEE = 100;
 
+// --- مكون أمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -40,6 +42,7 @@ class SafeComponent extends React.Component {
   }
 }
 
+// --- دوال مساعدة ---
 const deviceTypes = [
   { value: 'washingMachine', labelKey: 'washingMachine' },
   { value: 'heater', labelKey: 'heater' },
@@ -72,7 +75,9 @@ const CustomerHomeScreenContent = () => {
   const [gettingLoc, setGettingLoc] = useState(false);
   const [bidders, setBidders] = useState({});
   const [pageReady, setPageReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false); // <-- حالة الأدمن
 
+  // حالات النماذج
   const [complaintOpen, setComplaintOpen] = useState(null);
   const [complaintText, setComplaintText] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(null);
@@ -94,6 +99,14 @@ const CustomerHomeScreenContent = () => {
           setCustomer(profile);
           setBalance(profile.balance || 0);
           setReqForm(prev => ({ ...prev, phoneNumber: profile.phone || '', address: profile.address || '' }));
+
+          // ✅ التحقق من الأدمن
+          const { data: adminData } = await supabase
+            .from('admins')
+            .select('id')
+            .eq('id', user.id)
+            .maybeSingle();
+          if (adminData) setIsAdmin(true);
         }
 
         const { data: reqs } = await supabase
@@ -213,7 +226,7 @@ const CustomerHomeScreenContent = () => {
       status: 'pending',
       notes: reason,
     });
-    toast({ description: 'تم تقديم طلب استرداد. سوف يتم مراجعته خلال 24 ساعة.' });
+    toast({ description: 'تم تقديم طلب استرداد. سيتم مراجعته خلال 24 ساعة.' });
   };
 
   const handleCancelRequest = async (reqId) => {
@@ -349,7 +362,6 @@ const CustomerHomeScreenContent = () => {
               <span>📞 {req.phone_number}</span>
               {req.address && <span>📍 {req.address}</span>}
             </div>
-
             {req.status !== 'cancelled' && (
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
@@ -412,6 +424,7 @@ const CustomerHomeScreenContent = () => {
         );
       })}
 
+      {/* النماذج المنبثقة */}
       {complaintOpen && (
         <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50">
           <h3 className="font-bold mb-2">تقديم شكوى</h3>
@@ -449,6 +462,9 @@ const CustomerHomeScreenContent = () => {
           onClose={() => setChatRequestId(null)}
         />
       )}
+
+      {/* ✅ لوحة الأدمن (تظهر لك فقط) */}
+      {isAdmin && <AdminPanel />}
     </motion.div>
   );
 };
