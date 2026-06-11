@@ -213,7 +213,7 @@ const CustomerHomeScreenContent = () => {
       status: 'pending',
       notes: reason,
     });
-    toast({ description: 'تم تقديم طلب استرداد. سيتم مراجعته خلال 24 ساعة.' });
+    toast({ description: 'تم تقديم طلب استرداد. سوف يتم مراجعته خلال 24 ساعة.' });
   };
 
   const handleCancelRequest = async (reqId) => {
