@@ -15,7 +15,6 @@ import ChatPopup from '@/components/ChatPopup.jsx';
 
 const VISIT_FEE = 100;
 
-// --- مكون أمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -41,7 +40,6 @@ class SafeComponent extends React.Component {
   }
 }
 
-// --- دوال مساعدة ---
 const deviceTypes = [
   { value: 'washingMachine', labelKey: 'washingMachine' },
   { value: 'heater', labelKey: 'heater' },
@@ -75,28 +73,13 @@ const CustomerHomeScreenContent = () => {
   const [bidders, setBidders] = useState({});
   const [pageReady, setPageReady] = useState(false);
 
-  // حالات النماذج
   const [complaintOpen, setComplaintOpen] = useState(null);
   const [complaintText, setComplaintText] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [cancelVisitOpen, setCancelVisitOpen] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
-  const [chatRequestId, setChatRequestId] = useState(null); // لفتح الشات
-
-  // تنظيف التعيينات المنتهية (آمن)
-  useEffect(() => {
-    const cleanup = async () => {
-      if (supabase && typeof supabase.rpc === 'function') {
-        try {
-          await supabase.rpc('expire_stale_assignments');
-        } catch (err) {
-          // لا شيء
-        }
-      }
-    };
-    cleanup();
-  }, []);
+  const [chatRequestId, setChatRequestId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,7 +173,7 @@ const CustomerHomeScreenContent = () => {
     }]).select();
 
     setSubmitting(false);
-    if (error) {    // استرجاع الرصيد إذا فشل الطلب
+    if (error) {
       setBalance(balance);
       await supabase.from('customers').update({ balance }).eq('id', user.id);
       toast({ description: 'فشل: ' + error.message });
@@ -218,7 +201,6 @@ const CustomerHomeScreenContent = () => {
     }
   };
 
-  // إنشاء طلب استرداد بدلاً من إعادة الرصيد مباشرة
   const createRefundRequest = async (reqId, reason = '') => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('recharge_requests').insert({
@@ -323,7 +305,8 @@ const CustomerHomeScreenContent = () => {
         </div>
         <Button variant="ghost" onClick={() => { localStorage.clear(); navigate('/user-type'); }}><LogOut className="ltr:mr-2 rtl:ml-2" /> {t('logout')}</Button>
       </header>
-  {/* نموذج الطلب */}
+
+      {/* نموذج الطلب */}
       <div className="bg-card p-6 rounded-2xl shadow mb-8">
         <h2 className="text-2xl font-bold mb-4"><Settings className="inline text-primary" /> طلب صيانة جديد</h2>
         <div className="space-y-4">
@@ -429,7 +412,6 @@ const CustomerHomeScreenContent = () => {
         );
       })}
 
-      {/* النماذج المنبثقة */}
       {complaintOpen && (
         <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50">
           <h3 className="font-bold mb-2">تقديم شكوى</h3>
