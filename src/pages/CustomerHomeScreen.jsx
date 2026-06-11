@@ -12,11 +12,10 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
-import AdminPanel from '@/components/AdminPanel.jsx'; // <-- استيراد لوحة الأدمن
+import AdminPanel from '@/components/AdminPanel.jsx';
 
 const VISIT_FEE = 100;
 
-// --- مكون أمان لالتقاط الأخطاء ---
 class SafeComponent extends React.Component {
   constructor(props) {
     super(props);
@@ -32,9 +31,7 @@ class SafeComponent extends React.Component {
           <AlertTriangle size={64} className="text-red-500 mb-4" />
           <h1 className="text-2xl font-bold text-red-600 mb-2">حدث خطأ</h1>
           <p className="text-center text-muted-foreground mb-4">{this.state.error?.message}</p>
-          <Button onClick={() => this.setState({ error: null })}>
-            <RefreshCw size={16} /> إعادة تحميل
-          </Button>
+          <Button onClick={() => this.setState({ error: null })}><RefreshCw size={16} /> إعادة تحميل</Button>
         </div>
       );
     }
@@ -42,7 +39,6 @@ class SafeComponent extends React.Component {
   }
 }
 
-// --- دوال مساعدة ---
 const deviceTypes = [
   { value: 'washingMachine', labelKey: 'washingMachine' },
   { value: 'heater', labelKey: 'heater' },
@@ -75,9 +71,8 @@ const CustomerHomeScreenContent = () => {
   const [gettingLoc, setGettingLoc] = useState(false);
   const [bidders, setBidders] = useState({});
   const [pageReady, setPageReady] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false); // <-- حالة الأدمن
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // حالات النماذج
   const [complaintOpen, setComplaintOpen] = useState(null);
   const [complaintText, setComplaintText] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(null);
@@ -100,12 +95,7 @@ const CustomerHomeScreenContent = () => {
           setBalance(profile.balance || 0);
           setReqForm(prev => ({ ...prev, phoneNumber: profile.phone || '', address: profile.address || '' }));
 
-          // ✅ التحقق من الأدمن
-          const { data: adminData } = await supabase
-            .from('admins')
-            .select('id')
-            .eq('id', user.id)
-            .maybeSingle();
+          const { data: adminData } = await supabase.from('admins').select('id').eq('id', user.id).maybeSingle();
           if (adminData) setIsAdmin(true);
         }
 
@@ -151,7 +141,6 @@ const CustomerHomeScreenContent = () => {
   }, []);
 
   const handleField = (f, v) => setReqForm(prev => ({ ...prev, [f]: v }));
-
   const handleGetLocation = () => {
     if (!navigator.geolocation) return;
     setGettingLoc(true);
@@ -165,30 +154,19 @@ const CustomerHomeScreenContent = () => {
     if (!reqForm.deviceType || !reqForm.issueDescription || !reqForm.phoneNumber || reqForm.lat == null) {
       toast({ description: 'جميع الحقول والموقع مطلوبة.' }); return;
     }
-    if (balance < VISIT_FEE) {
-      toast({ description: 'الرصيد غير كافٍ.' }); return;
-    }
+    if (balance < VISIT_FEE) { toast({ description: 'الرصيد غير كافٍ.' }); return; }
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
     const newBalance = balance - VISIT_FEE;
     setBalance(newBalance);
     await supabase.from('customers').update({ balance: newBalance }).eq('id', user.id);
-
     const { data, error } = await supabase.from('maintenance_requests').insert([{
-      customer_id: user.id,
-      device_type: reqForm.deviceType,
-      issue_description: reqForm.issueDescription,
-      phone_number: reqForm.phoneNumber,
-      address: reqForm.address,
-      lat: reqForm.lat,
-      lng: reqForm.lng,
-      status: 'pending'
+      customer_id: user.id, device_type: reqForm.deviceType, issue_description: reqForm.issueDescription,
+      phone_number: reqForm.phoneNumber, address: reqForm.address, lat: reqForm.lat, lng: reqForm.lng, status: 'pending'
     }]).select();
-
     setSubmitting(false);
     if (error) {
-      setBalance(balance);
-      await supabase.from('customers').update({ balance }).eq('id', user.id);
+      setBalance(balance); await supabase.from('customers').update({ balance }).eq('id', user.id);
       toast({ description: 'فشل: ' + error.message });
     } else {
       toast({ description: 'تم إرسال الطلب! تم خصم 100 جنيه.' });
@@ -198,14 +176,11 @@ const CustomerHomeScreenContent = () => {
   };
 
   const handleSelect = async (reqId, techId) => {
-    const now = new Date();
-    const expires = new Date(now.getTime() + 10 * 60000);
+    const now = new Date(); const expires = new Date(now.getTime() + 10 * 60000);
     const { data, error } = await supabase
       .from('maintenance_requests')
       .update({ technician_id: techId, status: 'assigned', assigned_at: now.toISOString(), expires_at: expires.toISOString() })
-      .eq('id', reqId)
-      .eq('customer_id', (await supabase.auth.getUser()).data.user.id)
-      .select();
+      .eq('id', reqId).eq('customer_id', (await supabase.auth.getUser()).data.user.id).select();
     if (error) toast({ title: 'فشل', description: `${error.message}` });
     else if (!data?.length) toast({ title: 'فشل', description: 'لم يتم العثور على الطلب.' });
     else {
@@ -217,27 +192,18 @@ const CustomerHomeScreenContent = () => {
   const createRefundRequest = async (reqId, reason = '') => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('recharge_requests').insert({
-      user_id: user.id,
-      email: user.email,
-      amount: VISIT_FEE,
-      phone_number: customer?.phone || '',
-      request_type: 'refund',
-      related_request_id: reqId,
-      status: 'pending',
-      notes: reason,
+      user_id: user.id, email: user.email, amount: VISIT_FEE, phone_number: customer?.phone || '',
+      request_type: 'refund', related_request_id: reqId, status: 'pending', notes: reason
     });
-    toast({ description: 'تم تقديم طلب استرداد. سيتم مراجعته خلال 24 ساعة.' });
+    toast({ description: 'تم تقديم طلب استرداد.' });
   };
 
   const handleCancelRequest = async (reqId) => {
-    const { error } = await supabase
-      .from('maintenance_requests')
+    const { error } = await supabase.from('maintenance_requests')
       .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-      .eq('id', reqId)
-      .eq('customer_id', (await supabase.auth.getUser()).data.user.id);
-    if (error) {
-      toast({ description: 'فشل الإلغاء.' });
-    } else {
+      .eq('id', reqId).eq('customer_id', (await supabase.auth.getUser()).data.user.id);
+    if (error) toast({ description: 'فشل الإلغاء.' });
+    else {
       await createRefundRequest(reqId);
       setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'cancelled' } : r));
     }
@@ -245,46 +211,39 @@ const CustomerHomeScreenContent = () => {
 
   const handleCancelVisit = async (reqId) => {
     if (!cancelReason.trim()) { toast({ description: 'اكتب سبب الإلغاء.' }); return; }
-    const { error } = await supabase
-      .from('maintenance_requests')
+    const { error } = await supabase.from('maintenance_requests')
       .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancel_reason: cancelReason })
-      .eq('id', reqId)
-      .eq('customer_id', (await supabase.auth.getUser()).data.user.id);
-    if (error) {
-      toast({ description: 'فشل الإلغاء.' });
-    } else {
+      .eq('id', reqId).eq('customer_id', (await supabase.auth.getUser()).data.user.id);
+    if (error) toast({ description: 'فشل الإلغاء.' });
+    else {
       await createRefundRequest(reqId, cancelReason);
       setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'cancelled', cancel_reason: cancelReason } : r));
-      setCancelVisitOpen(null);
-      setCancelReason('');
+      setCancelVisitOpen(null); setCancelReason('');
     }
   };
 
   const handleSubmitComplaint = async (reqId) => {
-    if (!complaintText.trim()) { toast({ description: 'اكتب الشكوى.' }); return; }
+    if (!complaintText.trim()) return;
     const { data: req } = await supabase.from('maintenance_requests').select('complaints').eq('id', reqId).single();
-    const currentComplaints = req?.complaints || [];
-    const updated = [...currentComplaints, { text: complaintText, date: new Date().toISOString() }];
+    const current = req?.complaints || [];
+    const updated = [...current, { text: complaintText, date: new Date().toISOString() }];
     await supabase.from('maintenance_requests').update({ complaints: updated }).eq('id', reqId);
     toast({ description: 'تم تسجيل الشكوى.' });
-    setComplaintOpen(null);
-    setComplaintText('');
+    setComplaintOpen(null); setComplaintText('');
   };
 
   const handleSubmitFeedback = async (reqId) => {
-    if (!feedbackText.trim()) { toast({ description: 'اكتب تعليقاً.' }); return; }
+    if (!feedbackText.trim()) return;
     await supabase.from('maintenance_requests').update({ feedback: feedbackText }).eq('id', reqId);
     toast({ description: 'تم إرسال التعليق.' });
-    setFeedbackOpen(null);
-    setFeedbackText('');
+    setFeedbackOpen(null); setFeedbackText('');
   };
 
   const timeLeft = (exp) => {
     if (!exp) return '';
     const diff = new Date(exp) - new Date();
     if (diff <= 0) return 'انتهت';
-    const m = Math.floor(diff / 60000);
-    const s = Math.floor((diff % 60000) / 1000);
+    const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
@@ -296,14 +255,12 @@ const CustomerHomeScreenContent = () => {
     { key: 'in_progress', label: 'جاري الإصلاح', icon: <Wrench size={16} /> },
     { key: 'completed', label: 'مكتمل', icon: <CheckCircle size={16} /> },
   ];
-
-  const getStatusIndex = (status) => {
-    const mapping = { pending: 0, bidding: 0, assigned: 1, accepted: 2, on_the_way: 3, in_progress: 4, completed: 5 };
-    return mapping[status] ?? -1;
+const getStatusIndex = (status) => {
+    const m = { pending: 0, bidding: 0, assigned: 1, accepted: 2, on_the_way: 3, in_progress: 4, completed: 5 };
+    return m[status] ?? -1;
   };
 
   if (!pageReady) return <div className="min-h-screen flex items-center justify-center"><RefreshCw className="animate-spin" size={32} /></div>;
-
   const avatarLetter = (customer?.full_name || 'ع')[0];
 
   return (
@@ -311,29 +268,21 @@ const CustomerHomeScreenContent = () => {
       <header className="flex justify-between items-center mb-8 bg-card/50 backdrop-blur-sm p-4 rounded-2xl shadow-lg border">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center text-white font-bold text-xl shadow-md">{avatarLetter}</div>
-          <div>
-            <h1 className="text-2xl font-bold text-primary">أهلاً {customer?.full_name || 'عميلنا'}</h1>
-            <p className="text-sm text-muted-foreground">الرصيد: {balance} جنيه</p>
-          </div>
+          <div><h1 className="text-2xl font-bold text-primary">أهلاً {customer?.full_name || 'عميلنا'}</h1><p className="text-sm text-muted-foreground">الرصيد: {balance} جنيه</p></div>
         </div>
         <Button variant="ghost" onClick={() => { localStorage.clear(); navigate('/user-type'); }}><LogOut className="ltr:mr-2 rtl:ml-2" /> {t('logout')}</Button>
       </header>
 
-      {/* نموذج الطلب */}
       <div className="bg-card p-6 rounded-2xl shadow mb-8">
         <h2 className="text-2xl font-bold mb-4"><Settings className="inline text-primary" /> طلب صيانة جديد</h2>
         <div className="space-y-4">
-          <div>
-            <Label>نوع الجهاز</Label>
+          <div><Label>نوع الجهاز</Label>
             <select value={reqForm.deviceType} onChange={e => handleField('deviceType', e.target.value)} className="w-full rounded-md border p-2">
               <option value="">اختر...</option>
               {deviceTypes.map(d => <option key={d.value} value={d.value}>{t(d.labelKey)}</option>)}
             </select>
           </div>
-          <div>
-            <Label>وصف العطل</Label>
-            <Input value={reqForm.issueDescription} onChange={e => handleField('issueDescription', e.target.value)} />
-          </div>
+          <div><Label>وصف العطل</Label><Input value={reqForm.issueDescription} onChange={e => handleField('issueDescription', e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-4">
             <div><Label>رقم الهاتف</Label><Input value={reqForm.phoneNumber} onChange={e => handleField('phoneNumber', e.target.value)} /></div>
             <div><Label>العنوان</Label><Input value={reqForm.address} onChange={e => handleField('address', e.target.value)} placeholder="الشارع، المنطقة..." /></div>
@@ -346,49 +295,35 @@ const CustomerHomeScreenContent = () => {
         </div>
       </div>
 
-      {/* الطلبات النشطة */}
       {requests.map(req => {
         const statusIdx = getStatusIndex(req.status);
         return (
           <motion.div key={req.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card p-6 rounded-2xl shadow mb-6">
             <div className="flex justify-between items-start">
               <h3 className="font-bold text-xl"><Wrench size={20} className="inline text-primary" /> {t(req.device_type)}</h3>
-              {req.status === 'cancelled' ? (
-                <span className="text-sm text-red-600 flex items-center gap-1"><XCircle size={16} /> ملغي</span>
-              ) : null}
+              {req.status === 'cancelled' && <span className="text-sm text-red-600"><XCircle size={16} /> ملغي</span>}
             </div>
             <p className="text-sm mt-1">{req.issue_description}</p>
-            <div className="flex gap-4 text-xs text-muted-foreground mt-2">
-              <span>📞 {req.phone_number}</span>
-              {req.address && <span>📍 {req.address}</span>}
-            </div>
+            <div className="flex gap-4 text-xs text-muted-foreground mt-2"><span>📞 {req.phone_number}</span>{req.address && <span>📍 {req.address}</span>}</div>
+
             {req.status !== 'cancelled' && (
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
                   {statusSteps.map((step, idx) => (
                     <div key={step.key} className={`flex flex-col items-center ${idx <= statusIdx ? 'text-primary' : 'text-muted-foreground/40'}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${idx <= statusIdx ? 'bg-primary text-white' : 'bg-muted'}`}>
-                        {step.icon}
-                      </div>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${idx <= statusIdx ? 'bg-primary text-white' : 'bg-muted'}`}>{step.icon}</div>
                       <span className="text-[10px] mt-1">{step.label}</span>
                     </div>
                   ))}
                 </div>
-                <div className="w-full bg-muted h-2 rounded-full">
-                  <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${(statusIdx / (statusSteps.length - 1)) * 100}%` }} />
-                </div>
-                {req.expires_at && req.status === 'assigned' && (
-                  <p className="text-xs text-red-500 mt-1"><Clock size={12} /> الوقت المتبقي: {timeLeft(req.expires_at)}</p>
-                )}
+                <div className="w-full bg-muted h-2 rounded-full"><div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${(statusIdx / (statusSteps.length - 1)) * 100}%` }} /></div>
+                {req.expires_at && req.status === 'assigned' && <p className="text-xs text-red-500 mt-1"><Clock size={12} /> الوقت المتبقي: {timeLeft(req.expires_at)}</p>}
               </div>
             )}
-
-            <div className="flex flex-wrap gap-2 mt-4">
+           <div className="flex flex-wrap gap-2 mt-4">
               {(req.status === 'pending' || req.status === 'bidding') && (
                 <>
-                  <Button variant="destructive" size="sm" onClick={() => handleCancelRequest(req.id)}>
-                    <XCircle size={14} className="mr-1" /> إلغاء الطلب
-                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleCancelRequest(req.id)}><XCircle size={14} className="mr-1" /> إلغاء الطلب</Button>
                   {bidders[req.id]?.length > 0 && (
                     <div className="w-full mt-2">
                       <h4 className="font-semibold text-sm mb-1"><User size={14} className="inline" /> الفنيون المتقدمون:</h4>
@@ -402,21 +337,12 @@ const CustomerHomeScreenContent = () => {
                   )}
                 </>
               )}
-
               {['assigned', 'accepted', 'on_the_way', 'in_progress'].includes(req.status) && (
                 <>
-                  <Button variant="outline" size="sm" onClick={() => setChatRequestId(req.id)}>
-                    <MessageCircle size={14} className="mr-1" /> محادثة
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setCancelVisitOpen(req.id)}>
-                    <XCircle size={14} className="mr-1" /> إلغاء الزيارة
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setComplaintOpen(req.id)}>
-                    <MessageSquare size={14} className="mr-1" /> شكوى
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setFeedbackOpen(req.id)}>
-                    <ThumbsUp size={14} className="mr-1" /> تعليق
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setChatRequestId(req.id)}><MessageCircle size={14} className="mr-1" /> محادثة</Button>
+                  <Button variant="outline" size="sm" onClick={() => setCancelVisitOpen(req.id)}><XCircle size={14} className="mr-1" /> إلغاء الزيارة</Button>
+                  <Button variant="outline" size="sm" onClick={() => setComplaintOpen(req.id)}><MessageSquare size={14} className="mr-1" /> شكوى</Button>
+                  <Button variant="outline" size="sm" onClick={() => setFeedbackOpen(req.id)}><ThumbsUp size={14} className="mr-1" /> تعليق</Button>
                 </>
               )}
             </div>
@@ -424,46 +350,11 @@ const CustomerHomeScreenContent = () => {
         );
       })}
 
-      {/* النماذج المنبثقة */}
-      {complaintOpen && (
-        <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50">
-          <h3 className="font-bold mb-2">تقديم شكوى</h3>
-          <Input value={complaintText} onChange={e => setComplaintText(e.target.value)} placeholder="اشرح المشكلة..." />
-          <div className="flex gap-2 mt-3">
-            <Button size="sm" onClick={() => handleSubmitComplaint(complaintOpen)}>إرسال</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setComplaintOpen(null); setComplaintText(''); }}>إلغاء</Button>
-          </div>
-        </dialog>
-      )}
-      {feedbackOpen && (
-        <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50">
-          <h3 className="font-bold mb-2">تعليق / تقييم</h3>
-          <Input value={feedbackText} onChange={e => setFeedbackText(e.target.value)} placeholder="اكتب تعليقك..." />
-          <div className="flex gap-2 mt-3">
-            <Button size="sm" onClick={() => handleSubmitFeedback(feedbackOpen)}>إرسال</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setFeedbackOpen(null); setFeedbackText(''); }}>إلغاء</Button>
-          </div>
-        </dialog>
-      )}
-      {cancelVisitOpen && (
-        <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50">
-          <h3 className="font-bold mb-2">سبب إلغاء الزيارة</h3>
-          <Input value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="سبب الإلغاء..." />
-          <div className="flex gap-2 mt-3">
-            <Button size="sm" onClick={() => handleCancelVisit(cancelVisitOpen)}>تأكيد</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setCancelVisitOpen(null); setCancelReason(''); }}>إلغاء</Button>
-          </div>
-        </dialog>
-      )}
-      {chatRequestId && (
-        <ChatPopup
-          requestId={chatRequestId}
-          currentUser={{ id: customer?.id, userType: 'customer' }}
-          onClose={() => setChatRequestId(null)}
-        />
-      )}
+      {complaintOpen && <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50"><h3 className="font-bold mb-2">تقديم شكوى</h3><Input value={complaintText} onChange={e => setComplaintText(e.target.value)} placeholder="اشرح المشكلة..." /><div className="flex gap-2 mt-3"><Button size="sm" onClick={() => handleSubmitComplaint(complaintOpen)}>إرسال</Button><Button size="sm" variant="ghost" onClick={() => { setComplaintOpen(null); setComplaintText(''); }}>إلغاء</Button></div></dialog>}
+      {feedbackOpen && <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50"><h3 className="font-bold mb-2">تعليق / تقييم</h3><Input value={feedbackText} onChange={e => setFeedbackText(e.target.value)} placeholder="اكتب تعليقك..." /><div className="flex gap-2 mt-3"><Button size="sm" onClick={() => handleSubmitFeedback(feedbackOpen)}>إرسال</Button><Button size="sm" variant="ghost" onClick={() => { setFeedbackOpen(null); setFeedbackText(''); }}>إلغاء</Button></div></dialog>}
+      {cancelVisitOpen && <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50"><h3 className="font-bold mb-2">سبب إلغاء الزيارة</h3><Input value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="سبب الإلغاء..." /><div className="flex gap-2 mt-3"><Button size="sm" onClick={() => handleCancelVisit(cancelVisitOpen)}>تأكيد</Button><Button size="sm" variant="ghost" onClick={() => { setCancelVisitOpen(null); setCancelReason(''); }}>إلغاء</Button></div></dialog>}
+      {chatRequestId && <ChatPopup requestId={chatRequestId} currentUser={{ id: customer?.id, userType: 'customer' }} onClose={() => setChatRequestId(null)} />}
 
-      {/* ✅ لوحة الأدمن (تظهر لك فقط) */}
       {isAdmin && <AdminPanel />}
     </motion.div>
   );
