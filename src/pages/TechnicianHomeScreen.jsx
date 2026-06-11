@@ -31,16 +31,17 @@ const TechnicianHomeScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [submittingBid, setSubmittingBid] = useState(null);
+  const [delayReason, setDelayReason] = useState('');
   const [locationStatus, setLocationStatus] = useState('لم يتم تحديد الموقع');
   const [chatRequestId, setChatRequestId] = useState(null);
 
-  // دالة جلب الطلبات (تُستدعى بعد تحديد الموقع أو عند الحاجة)
+  // دالة جلب الطلبات
   const fetchPendingRequests = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('maintenance_requests')
-        .select('*, customer:customer_id ( full_name, phone, address )')
+        .select('*') // نجلب كل الحقول مباشرة بدون علاقات
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
@@ -124,35 +125,91 @@ const TechnicianHomeScreen = () => {
       // جلب الطلبات المعينة
       const { data: assigned } = await supabase
         .from('maintenance_requests')
-        .select('*, customer:customer_id ( full_name, phone, address )')
+        .select('*')
         .eq('technician_id', tech.id)
         .in('status', ['assigned', 'accepted', 'on_the_way', 'in_progress']);
       if (assigned) setMyAssignedRequests(assigned);
+
+      // جلب الطلبات المعلقة
+      fetchPendingRequests();
     };
 
     init();
-  }, [navigate, toast]);
+  }, [navigate, toast, fetchPendingRequests]);
 
-  // جلب الطلبات المعلقة بعد تحديد الموقع
-  useEffect(() => {
-    if (technician) {
-      fetchPendingRequests();
+  // دوال الإجراءات (تقديم عرض، تحديث حالة، تأجيل)
+  const handlePlaceBid = async (requestId) => {
+    setSubmittingBid(requestId);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('bids').insert({ request_id: requestId, technician_id: user.id });
+    setSubmittingBid(null);
+    if (error) {
+      if (error.code === '23505') toast({ description: 'لقد قدمت عرضاً مسبقاً.' });
+      else toast({ description: 'فشل تقديم العرض.' });
+    } else {
+      toast({ description: 'تم تقديم العرض. بانتظار موافقة العميل.' });
     }
-  }, [technician, currentLocation, fetchPendingRequests]);
+  };
 
-  // ... (باقي الدوال: handlePlaceBid, handleUpdateStatus, getTimeLeft, إلخ، بدون تغيير) ...
-  // سيتم تضمينها في الكود الكامل أدناه
+  const handleUpdateStatus = async (requestId, newStatus) => {
+    const updateData = { status: newStatus };
+    if (newStatus === 'accepted' || newStatus === 'on_the_way') updateData.expires_at = null;
+    const { error } = await supabase.from('maintenance_requests').update(updateData).eq('id', requestId);
+    if (error) {
+      toast({ description: 'فشل تحديث الحالة.' });
+      return;
+    }
+    setMyAssignedRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, ...updateData } : r))
+    );
+    toast({ description: `الحالة: ${newStatus}` });
+  };
+
+  const handleDelay = async (requestId) => {
+    if (!delayReason.trim()) {
+      toast({ description: 'اكتب سبب التأجيل.' });
+      return;
+    }
+    const { error } = await supabase
+      .from('maintenance_requests')
+      .update({
+        notes: delayReason,
+        expires_at: new Date(Date.now() + 30 * 60000).toISOString(),
+      })
+      .eq('id', requestId);
+    if (error) {
+      toast({ description: 'فشل التأجيل.' });
+      return;
+    }
+    setMyAssignedRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, notes: delayReason } : r))
+    );
+    toast({ description: 'تم التأجيل.' });
+    setDelayReason('');
+  };
+
+  const getTimeLeft = (expiresAt) => {
+    if (!expiresAt) return '';
+    const diff = new Date(expiresAt) - new Date();
+    if (diff <= 0) return 'انتهت';
+    const m = Math.floor(diff / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  if (!technician) {
+    return <div className="min-h-screen flex items-center justify-center"><RefreshCw className="animate-spin" size={32} /></div>;
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-primary/5 via-background to-accent/5">
-      {/* الهيدر والمحتوى كما في الكود السابق، ولكن مع إظهار locationStatus الفعلي */}
       <header className="flex justify-between items-center mb-8 bg-card/50 backdrop-blur-sm p-4 rounded-2xl shadow-lg border">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-white font-bold text-xl">
             {(technician?.full_name || 'ف')[0]}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-primary">{technician?.full_name || 'فني'}</h1>
+            <h1 className="text-2xl font-bold text-primary">{technician.full_name || 'فني'}</h1>
             <p className="text-xs flex items-center gap-1 text-muted-foreground">
               <MapPin size={12} /> {locationStatus}
             </p>
@@ -199,6 +256,12 @@ const TechnicianHomeScreen = () => {
                       {req.distance ? Math.round(req.distance / 30) * 60 : '؟'} دقيقة
                     </span>
                   </div>
+                  {/* عرض بيانات الاتصال من الطلب نفسه */}
+                  {req.phone_number && (
+                    <p className="text-xs flex items-center gap-1 mt-1">
+                      <Phone size={12} /> {req.phone_number}
+                    </p>
+                  )}
                   {req.address && (
                     <p className="text-xs text-muted-foreground mt-1">📍 {req.address}</p>
                   )}
@@ -212,7 +275,61 @@ const TechnicianHomeScreen = () => {
         )}
       </section>
 
-      {/* باقي الأقسام (طلباتي النشطة، الشات) - يمكنك نسخها من الكود السابق */}
+      {myAssignedRequests.length > 0 && (
+        <section>
+          <h2 className="text-2xl font-bold mb-4">طلباتي النشطة</h2>
+          {myAssignedRequests.map((req) => (
+            <div key={req.id} className="bg-card p-4 rounded-2xl shadow mb-3 border-l-4 border-primary">
+              <div className="flex flex-col md:flex-row justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-lg">{req.device_type}</h3>
+                  <p className="text-sm">{req.issue_description}</p>
+                  {req.phone_number && (
+                    <p className="text-xs flex items-center gap-1 mt-1">
+                      <Phone size={12} /> {req.phone_number}
+                    </p>
+                  )}
+                  <p className="text-xs mt-1">الحالة: <span className="font-semibold">{req.status}</span></p>
+                  {req.expires_at && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <Clock size={12} /> {getTimeLeft(req.expires_at)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 items-start">
+                  {req.status === 'assigned' && (
+                    <>
+                      <Button size="sm" onClick={() => handleUpdateStatus(req.id, 'on_the_way')}><Truck size={14} className="mr-1" /> في الطريق</Button>
+                      <Button size="sm" variant="outline" onClick={() => document.getElementById(`delay-${req.id}`).showModal()}>تأجيل</Button>
+                    </>
+                  )}
+                  {req.status === 'on_the_way' && (
+                    <Button size="sm" onClick={() => handleUpdateStatus(req.id, 'in_progress')}><Wrench size={14} className="mr-1" /> بدء الإصلاح</Button>
+                  )}
+                  {req.status === 'in_progress' && (
+                    <Button size="sm" onClick={() => handleUpdateStatus(req.id, 'completed')}><CheckCircle size={14} className="mr-1" /> تم الإصلاح</Button>
+                  )}
+
+                  <Button size="sm" variant="secondary" onClick={() => setChatRequestId(req.id)}><MessageCircle size={14} className="mr-1" /> محادثة</Button>
+
+                  <dialog id={`delay-${req.id}`} className="p-4 rounded-xl shadow-xl">
+                    <h3 className="font-bold mb-2">سبب التأجيل</h3>
+                    <Input value={delayReason} onChange={(e) => setDelayReason(e.target.value)} placeholder="اكتب السبب..." />
+                    <div className="flex gap-2 mt-3">
+                      <Button size="sm" onClick={() => { handleDelay(req.id); document.getElementById(`delay-${req.id}`).close(); }}>تأكيد</Button>
+                      <Button size="sm" variant="ghost" onClick={() => document.getElementById(`delay-${req.id}`).close()}>إلغاء</Button>
+                    </div>
+                  </dialog>
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {chatRequestId && technician && (
+        <ChatPopup requestId={chatRequestId} currentUser={{ id: technician.id, userType: 'technician' }} onClose={() => setChatRequestId(null)} />
+      )}
     </motion.div>
   );
 };
