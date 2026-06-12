@@ -1,21 +1,36 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
-import { LogOut, RefreshCw } from 'lucide-react';
+import { Input } from '@/components/ui/input.jsx';
+import { Label } from '@/components/ui/label.jsx';
+import {
+  LogOut, MapPin, Clock, Wrench, Settings, User, AlertTriangle, RefreshCw,
+  XCircle, MessageSquare, ThumbsUp, CheckCircle, Truck, MessageCircle, Star
+} from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 import AdminPanel from '@/components/AdminPanel.jsx';
-import RequestForm from '@/components/customer/RequestForm.jsx';
-import RequestCard from '@/components/customer/RequestCard.jsx';
-import RatingModal from '@/components/customer/RatingModal.jsx';
-import ComplaintModal from '@/components/customer/ComplaintModal.jsx';
-import FeedbackModal from '@/components/customer/FeedbackModal.jsx';
-import CancelVisitModal from '@/components/customer/CancelVisitModal.jsx';
 
 const VISIT_FEE = 100;
+
+// دالة مساعدة لتحويل الحالة لرقم
+const getStatusIndex = (status) => {
+  const mapping = { pending: 0, bidding: 0, assigned: 1, accepted: 2, on_the_way: 3, in_progress: 4, completed: 5 };
+  return mapping[status] ?? 0;
+};
+
+// دالة الوقت المتبقي
+const timeLeft = (exp) => {
+  if (!exp) return '';
+  const diff = new Date(exp) - new Date();
+  if (diff <= 0) return 'انتهت';
+  const m = Math.floor(diff / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+};
 
 const CustomerHomeScreen = () => {
   const { t } = useLanguage();
@@ -68,7 +83,7 @@ const CustomerHomeScreen = () => {
     const requestsList = reqs || [];
     setRequests(requestsList);
 
-    // --- جلب العروض بالطريقة المنفصلة والآمنة ---
+    // --- جلب العروض بالطريقة المنفصلة ---
     const biddingIds = requestsList.filter(r => r.status === 'pending' || r.status === 'bidding').map(r => r.id);
     if (biddingIds.length > 0) {
       const { data: bidsData } = await supabase
@@ -78,16 +93,13 @@ const CustomerHomeScreen = () => {
 
       if (bidsData && bidsData.length > 0) {
         const techIds = [...new Set(bidsData.map(b => b.technician_id))];
-
         const { data: techsData } = await supabase
           .from('technicians')
           .select('id, full_name, phone, specialization, avg_rating')
           .in('id', techIds);
 
         const techMap = {};
-        if (techsData) {
-          techsData.forEach(tech => { techMap[tech.id] = tech; });
-        }
+        if (techsData) techsData.forEach(tech => { techMap[tech.id] = tech; });
 
         const map = {};
         bidsData.forEach(b => {
@@ -260,30 +272,52 @@ const CustomerHomeScreen = () => {
         <Button variant="ghost" onClick={() => { localStorage.clear(); navigate('/user-type'); }}><LogOut /> {t('logout')}</Button>
       </header>
 
-      <RequestForm
-        reqForm={reqForm}
-        onFieldChange={handleFieldChange}
-        onGetLocation={handleGetLocation}
-        onCreate={handleCreateRequest}
-        submitting={submitting}
-        gettingLoc={gettingLoc}
-      />
+      {/* نموذج طلب جديد */}
+      <div className="bg-card p-6 rounded-2xl shadow mb-8">
+        <h2 className="text-2xl font-bold mb-4"><Settings className="inline text-primary" /> طلب صيانة جديد</h2>
+        <div className="space-y-4">
+          <div>
+            <Label>نوع الجهاز</Label>
+            <select value={reqForm.deviceType} onChange={e => handleFieldChange('deviceType', e.target.value)} className="w-full rounded-md border p-2">
+              <option value="">اختر...</option>
+              <option value="washingMachine">غسالة</option>
+              <option value="heater">سخان</option>
+              <option value="oven">فرن</option>
+              <option value="refrigerator">ثلاجة</option>
+              <option value="airConditioner">تكييف</option>
+            </select>
+          </div>
+          <div><Label>وصف العطل</Label><Input value={reqForm.issueDescription} onChange={e => handleFieldChange('issueDescription', e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>رقم الهاتف</Label><Input value={reqForm.phoneNumber} onChange={e => handleFieldChange('phoneNumber', e.target.value)} /></div>
+            <div><Label>العنوان</Label><Input value={reqForm.address} onChange={e => handleFieldChange('address', e.target.value)} placeholder="الشارع، المنطقة..." /></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleGetLocation} disabled={gettingLoc}><MapPin size={16} /> تحديد الموقع</Button>
+            {reqForm.lat != null && <span className="text-green-500 text-sm">✓ تم</span>}
+          </div>
+          <Button className="w-full" onClick={handleCreateRequest} disabled={submitting}>إرسال الطلب (خصم {VISIT_FEE} جنيه)</Button>
+        </div>
+      </div>
 
+      {/* التبويبات */}
       <div className="flex gap-4 mb-6">
         <Button variant={activeTab === 'active' ? 'default' : 'outline'} onClick={() => setActiveTab('active')}>قيد التنفيذ ({activeRequests.length})</Button>
         <Button variant={activeTab === 'archived' ? 'default' : 'outline'} onClick={() => setActiveTab('archived')}>الأرشيف ({archivedRequests.length})</Button>
       </div>
 
-      {activeTab === 'active' && activeRequests.map(req => (
-        <div key={req.id} className="bg-card p-6 rounded-2xl shadow mb-6">
-          <div className="flex justify-between">
-            <h3 className="font-bold text-xl">{req.device_type}</h3>
-            {req.status === 'cancelled' && <span className="text-red-600"><XCircle size={16} /> ملغي</span>}
-          </div>
-          <p className="text-sm mt-1">{req.issue_description}</p>
-          <p className="text-xs text-muted-foreground mt-2">📞 {req.phone_number} {req.address && `📍 ${req.address}`}</p>
+      {/* قائمة الطلبات النشطة */}
+      {activeTab === 'active' && activeRequests.map(req => {
+        const statusIdx = getStatusIndex(req.status);
+        return (
+          <div key={req.id} className="bg-card p-6 rounded-2xl shadow mb-6">
+            <div className="flex justify-between">
+              <h3 className="font-bold text-xl">{req.device_type}</h3>
+              {req.status === 'cancelled' && <span className="text-red-600"><XCircle size={16} /> ملغي</span>}
+            </div>
+            <p className="text-sm mt-1">{req.issue_description}</p>
+            <p className="text-xs text-muted-foreground mt-2">📞 {req.phone_number} {req.address && `📍 ${req.address}`}</p>
 
-          {req.status !== 'cancelled' && (
             <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
                 {[
@@ -293,63 +327,60 @@ const CustomerHomeScreen = () => {
                   { key: 'on_the_way', label: 'في الطريق', icon: <Truck size={16} /> },
                   { key: 'in_progress', label: 'جاري الإصلاح', icon: <Wrench size={16} /> },
                   { key: 'completed', label: 'مكتمل', icon: <CheckCircle size={16} /> },
-                ].map((step, idx) => {
-                  const mapping = { pending: 0, bidding: 0, assigned: 1, accepted: 2, on_the_way: 3, in_progress: 4, completed: 5 };
-                  const currentIdx = mapping[req.status] ?? 0;
-                  return (
-                    <div key={step.key} className={`flex flex-col items-center ${idx <= currentIdx ? 'text-primary' : 'text-muted-foreground/40'}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${idx <= currentIdx ? 'bg-primary text-white' : 'bg-muted'}`}>
-                        {step.icon}
-                      </div>
-                      <span className="text-[10px] mt-1">{step.label}</span>
+                ].map((step, idx) => (
+                  <div key={step.key} className={`flex flex-col items-center ${idx <= statusIdx ? 'text-primary' : 'text-muted-foreground/40'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${idx <= statusIdx ? 'bg-primary text-white' : 'bg-muted'}`}>
+                      {step.icon}
                     </div>
-                  );
-                })}
+                    <span className="text-[10px] mt-1">{step.label}</span>
+                  </div>
+                ))}
               </div>
               <div className="w-full bg-muted h-2 rounded-full">
-                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${( (mapping[req.status] ?? 0) / 5 ) * 100}%` }} />
+                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${(statusIdx / 5) * 100}%` }} />
               </div>
               {req.expires_at && req.status === 'assigned' && (
                 <p className="text-xs text-red-500 mt-1"><Clock size={12} /> الوقت المتبقي: {timeLeft(req.expires_at)}</p>
               )}
             </div>
-          )}
 
-          <div className="flex flex-wrap gap-2 mt-4">
-            {(req.status === 'pending' || req.status === 'bidding') && (
-              <>
-                <Button variant="destructive" size="sm" onClick={() => handleCancelRequest(req.id)}><XCircle size={14} /> إلغاء</Button>
-                {biddersMap[req.id]?.length > 0 && (
-                  <div className="w-full mt-2">
-                    <h4 className="font-semibold text-sm mb-1">الفنيون المتقدمون:</h4>
-                    {biddersMap[req.id].map(tech => (
-                      <div key={tech.id} className="flex justify-between items-center border rounded-lg p-2 mb-1">
-                        <span>{tech.full_name} ({tech.specialization}) ⭐ {tech.avg_rating?.toFixed(1) || '0.0'}</span>
-                        <Button size="sm" onClick={() => handleSelectTechnician(req.id, tech.id)}>اختيار</Button>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {(req.status === 'pending' || req.status === 'bidding') && (
+                <>
+                  <Button variant="destructive" size="sm" onClick={() => handleCancelRequest(req.id)}><XCircle size={14} /> إلغاء</Button>
+                  {biddersMap[req.id]?.length > 0 && (
+                    <div className="w-full mt-2">
+                      <h4 className="font-semibold text-sm mb-1">الفنيون المتقدمون:</h4>
+                      {biddersMap[req.id].map(tech => (
+                        <div key={tech.id} className="flex justify-between items-center border rounded-lg p-2 mb-1">
+                          <span>{tech.full_name} ({tech.specialization}) ⭐ {tech.avg_rating?.toFixed(1) || '0.0'}</span>
+                          <Button size="sm" onClick={() => handleSelectTechnician(req.id, tech.id)}>اختيار</Button>
+                        </div>
+                      ))}
+                      {/* صندوق التشخيص المؤقت */}
+                      <div style={{ background: '#e0f2fe', padding: '10px', marginTop: '8px', borderRadius: '8px', fontSize: '12px', direction: 'ltr', textAlign: 'left' }}>
+                        <strong>🔍 Debug Data:</strong><br/>
+                        BiddersMap: {JSON.stringify(biddersMap[req.id])}<br/>
                       </div>
-                    ))}
-                    {/* صندوق التشخيص المؤقت */}
-                    <div style={{ background: '#e0f2fe', padding: '10px', marginTop: '8px', borderRadius: '8px', fontSize: '12px', direction: 'ltr', textAlign: 'left' }}>
-                      <strong>🔍 Debug Data:</strong><br/>
-                      BiddersMap: {JSON.stringify(biddersMap[req.id])}<br/>
                     </div>
-                  </div>
-                )}
-              </>
-            )}
+                  )}
+                </>
+              )}
 
-            {['assigned', 'accepted', 'on_the_way', 'in_progress'].includes(req.status) && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => setChatRequestId(req.id)}><MessageCircle size={14} /> محادثة</Button>
-                <Button variant="outline" size="sm" onClick={() => setCancelVisitOpen(req.id)}><XCircle size={14} /> إلغاء الزيارة</Button>
-                <Button variant="outline" size="sm" onClick={() => setComplaintOpen(req.id)}><MessageSquare size={14} /> شكوى</Button>
-                <Button variant="outline" size="sm" onClick={() => setFeedbackOpen(req.id)}><ThumbsUp size={14} /> تعليق</Button>
-              </>
-            )}
+              {['assigned', 'accepted', 'on_the_way', 'in_progress'].includes(req.status) && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setChatRequestId(req.id)}><MessageCircle size={14} /> محادثة</Button>
+                  <Button variant="outline" size="sm" onClick={() => setCancelVisitOpen(req.id)}><XCircle size={14} /> إلغاء الزيارة</Button>
+                  <Button variant="outline" size="sm" onClick={() => setComplaintOpen(req.id)}><MessageSquare size={14} /> شكوى</Button>
+                  <Button variant="outline" size="sm" onClick={() => setFeedbackOpen(req.id)}><ThumbsUp size={14} /> تعليق</Button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
+      {/* قائمة الطلبات المؤرشفة */}
       {activeTab === 'archived' && archivedRequests.map(req => (
         <div key={req.id} className="bg-card p-6 rounded-2xl shadow mb-6 opacity-80">
           <div className="flex justify-between">
@@ -368,42 +399,50 @@ const CustomerHomeScreen = () => {
         </div>
       ))}
 
-      <RatingModal
-        open={!!ratingOpen}
-        onClose={() => setRatingOpen(null)}
-        onSubmit={() => handleSubmitRating(ratingOpen)}
-        stars={stars}
-        setStars={setStars}
-        comment={ratingComment}
-        setComment={setRatingComment}
-      />
-      <ComplaintModal
-        open={!!complaintOpen}
-        onClose={() => setComplaintOpen(null)}
-        onSubmit={() => handleSubmitComplaint(complaintOpen)}
-        text={complaintText}
-        setText={setComplaintText}
-      />
-      <FeedbackModal
-        open={!!feedbackOpen}
-        onClose={() => setFeedbackOpen(null)}
-        onSubmit={() => handleSubmitFeedback(feedbackOpen)}
-        text={feedbackText}
-        setText={setFeedbackText}
-      />
-      <CancelVisitModal
-        open={!!cancelVisitOpen}
-        onClose={() => setCancelVisitOpen(null)}
-        onSubmit={() => handleCancelVisit(cancelVisitOpen)}
-        reason={cancelReason}
-        setReason={setCancelReason}
-      />
+
+      {/* النوافذ المنبثقة */}
+      <Modal open={!!ratingOpen} onClose={() => setRatingOpen(null)} title="تقييم الفني">
+        <div className="flex gap-1 mb-4">
+          {[1,2,3,4,5].map(i => (
+            <Star key={i} size={32} className={`cursor-pointer ${i <= stars ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} onClick={() => setStars(i)} />
+          ))}
+        </div>
+        <Input value={ratingComment} onChange={e => setRatingComment(e.target.value)} placeholder="تعليقك (اختياري)" />
+        <Button className="mt-3 w-full" size="sm" onClick={() => handleSubmitRating(ratingOpen)}>إرسال</Button>
+      </Modal>
+
+      <Modal open={!!complaintOpen} onClose={() => setComplaintOpen(null)} title="تقديم شكوى">
+        <Input value={complaintText} onChange={e => setComplaintText(e.target.value)} placeholder="اشرح المشكلة..." />
+        <Button className="mt-3 w-full" size="sm" onClick={() => handleSubmitComplaint(complaintOpen)}>إرسال</Button>
+      </Modal>
+
+      <Modal open={!!feedbackOpen} onClose={() => setFeedbackOpen(null)} title="تعليق / تقييم">
+        <Input value={feedbackText} onChange={e => setFeedbackText(e.target.value)} placeholder="اكتب تعليقك..." />
+        <Button className="mt-3 w-full" size="sm" onClick={() => handleSubmitFeedback(feedbackOpen)}>إرسال</Button>
+      </Modal>
+
+      <Modal open={!!cancelVisitOpen} onClose={() => setCancelVisitOpen(null)} title="سبب إلغاء الزيارة">
+        <Input value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="سبب الإلغاء..." />
+        <Button className="mt-3 w-full" size="sm" onClick={() => handleCancelVisit(cancelVisitOpen)}>تأكيد</Button>
+      </Modal>
 
       {chatRequestId && (
         <ChatPopup requestId={chatRequestId} currentUser={{ id: customer?.id, userType: 'customer' }} onClose={() => setChatRequestId(null)} />
       )}
       {isAdmin && <AdminPanel />}
     </motion.div>
+  );
+};
+
+// مكون المودال محلي
+const Modal = ({ open, onClose, title, children }) => {
+  if (!open) return null;
+  return (
+    <dialog open className="p-4 rounded-xl shadow-xl fixed inset-0 m-auto z-50">
+      <h3 className="font-bold mb-2">{title}</h3>
+      {children}
+      <Button size="sm" variant="ghost" className="mt-2" onClick={onClose}>إلغاء</Button>
+    </dialog>
   );
 };
 
