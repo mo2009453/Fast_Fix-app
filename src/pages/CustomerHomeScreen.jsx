@@ -399,7 +399,6 @@ const CustomerHomeScreen = () => {
         </div>
       ))}
 
-
       {/* النوافذ المنبثقة */}
       <Modal open={!!ratingOpen} onClose={() => setRatingOpen(null)} title="تقييم الفني">
         <div className="flex gap-1 mb-4">
