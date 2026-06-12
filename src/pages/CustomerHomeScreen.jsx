@@ -76,18 +76,13 @@ const CustomerHomeScreen = () => {
         .select('request_id, technician_id')
         .in('request_id', biddingIds);
 
-      console.log('bidsData:', bidsData);
-
       if (bidsData && bidsData.length > 0) {
         const techIds = [...new Set(bidsData.map(b => b.technician_id))];
-        console.log('techIds:', techIds);
 
         const { data: techsData } = await supabase
           .from('technicians')
           .select('id, full_name, phone, specialization, avg_rating')
           .in('id', techIds);
-
-        console.log('techsData:', techsData);
 
         const techMap = {};
         if (techsData) {
@@ -108,7 +103,6 @@ const CustomerHomeScreen = () => {
             distance: null,
           });
         });
-        console.log('biddersMap:', map);
         setBiddersMap(map);
       } else {
         setBiddersMap({});
@@ -281,22 +275,97 @@ const CustomerHomeScreen = () => {
       </div>
 
       {activeTab === 'active' && activeRequests.map(req => (
-        <RequestCard
-          key={req.id}
-          req={req}
-          bidders={biddersMap[req.id]}
-          onSelect={handleSelectTechnician}
-          onCancel={handleCancelRequest}
-          onCancelVisit={(id) => setCancelVisitOpen(id)}
-          onComplaint={(id) => setComplaintOpen(id)}
-          onFeedback={(id) => setFeedbackOpen(id)}
-          onChat={(id) => setChatRequestId(id)}
-          onRate={(id) => setRatingOpen(id)}
-        />
+        <div key={req.id} className="bg-card p-6 rounded-2xl shadow mb-6">
+          <div className="flex justify-between">
+            <h3 className="font-bold text-xl">{req.device_type}</h3>
+            {req.status === 'cancelled' && <span className="text-red-600"><XCircle size={16} /> ملغي</span>}
+          </div>
+          <p className="text-sm mt-1">{req.issue_description}</p>
+          <p className="text-xs text-muted-foreground mt-2">📞 {req.phone_number} {req.address && `📍 ${req.address}`}</p>
+
+          {req.status !== 'cancelled' && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                {[
+                  { key: 'pending', label: 'تم الإرسال', icon: <CheckCircle size={16} /> },
+                  { key: 'assigned', label: 'تم تعيين فني', icon: <User size={16} /> },
+                  { key: 'accepted', label: 'الفني قبل', icon: <CheckCircle size={16} /> },
+                  { key: 'on_the_way', label: 'في الطريق', icon: <Truck size={16} /> },
+                  { key: 'in_progress', label: 'جاري الإصلاح', icon: <Wrench size={16} /> },
+                  { key: 'completed', label: 'مكتمل', icon: <CheckCircle size={16} /> },
+                ].map((step, idx) => {
+                  const mapping = { pending: 0, bidding: 0, assigned: 1, accepted: 2, on_the_way: 3, in_progress: 4, completed: 5 };
+                  const currentIdx = mapping[req.status] ?? 0;
+                  return (
+                    <div key={step.key} className={`flex flex-col items-center ${idx <= currentIdx ? 'text-primary' : 'text-muted-foreground/40'}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${idx <= currentIdx ? 'bg-primary text-white' : 'bg-muted'}`}>
+                        {step.icon}
+                      </div>
+                      <span className="text-[10px] mt-1">{step.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="w-full bg-muted h-2 rounded-full">
+                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${( (mapping[req.status] ?? 0) / 5 ) * 100}%` }} />
+              </div>
+              {req.expires_at && req.status === 'assigned' && (
+                <p className="text-xs text-red-500 mt-1"><Clock size={12} /> الوقت المتبقي: {timeLeft(req.expires_at)}</p>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 mt-4">
+            {(req.status === 'pending' || req.status === 'bidding') && (
+              <>
+                <Button variant="destructive" size="sm" onClick={() => handleCancelRequest(req.id)}><XCircle size={14} /> إلغاء</Button>
+                {biddersMap[req.id]?.length > 0 && (
+                  <div className="w-full mt-2">
+                    <h4 className="font-semibold text-sm mb-1">الفنيون المتقدمون:</h4>
+                    {biddersMap[req.id].map(tech => (
+                      <div key={tech.id} className="flex justify-between items-center border rounded-lg p-2 mb-1">
+                        <span>{tech.full_name} ({tech.specialization}) ⭐ {tech.avg_rating?.toFixed(1) || '0.0'}</span>
+                        <Button size="sm" onClick={() => handleSelectTechnician(req.id, tech.id)}>اختيار</Button>
+                      </div>
+                    ))}
+                    {/* صندوق التشخيص المؤقت */}
+                    <div style={{ background: '#e0f2fe', padding: '10px', marginTop: '8px', borderRadius: '8px', fontSize: '12px', direction: 'ltr', textAlign: 'left' }}>
+                      <strong>🔍 Debug Data:</strong><br/>
+                      BiddersMap: {JSON.stringify(biddersMap[req.id])}<br/>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {['assigned', 'accepted', 'on_the_way', 'in_progress'].includes(req.status) && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setChatRequestId(req.id)}><MessageCircle size={14} /> محادثة</Button>
+                <Button variant="outline" size="sm" onClick={() => setCancelVisitOpen(req.id)}><XCircle size={14} /> إلغاء الزيارة</Button>
+                <Button variant="outline" size="sm" onClick={() => setComplaintOpen(req.id)}><MessageSquare size={14} /> شكوى</Button>
+                <Button variant="outline" size="sm" onClick={() => setFeedbackOpen(req.id)}><ThumbsUp size={14} /> تعليق</Button>
+              </>
+            )}
+          </div>
+        </div>
       ))}
 
       {activeTab === 'archived' && archivedRequests.map(req => (
-        <RequestCard key={req.id} req={req} onRate={(id) => setRatingOpen(id)} />
+        <div key={req.id} className="bg-card p-6 rounded-2xl shadow mb-6 opacity-80">
+          <div className="flex justify-between">
+            <h3 className="font-bold text-xl">{req.device_type}</h3>
+            <span className={`text-sm font-semibold ${req.status === 'completed' ? 'text-green-600' : 'text-red-600'}`}>
+              {req.status === 'completed' ? 'مكتمل' : 'ملغي'}
+            </span>
+          </div>
+          <p className="text-sm mt-1">{req.issue_description}</p>
+          <p className="text-xs text-muted-foreground mt-2">📞 {req.phone_number} {req.address && `📍 ${req.address}`}</p>
+          {req.status === 'completed' && (
+            <div className="mt-4">
+              <Button variant="outline" size="sm" onClick={() => setRatingOpen(req.id)}><Star size={14} /> تقييم الفني</Button>
+            </div>
+          )}
+        </div>
       ))}
 
       <RatingModal
