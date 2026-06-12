@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button.jsx';
 import { LogOut, RefreshCw } from 'lucide-react';
@@ -8,8 +8,6 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 import { supabase } from '@/lib/supabaseClient';
 import ChatPopup from '@/components/ChatPopup.jsx';
 import AdminPanel from '@/components/AdminPanel.jsx';
-
-// استيراد المكونات الجديدة
 import RequestForm from '@/components/customer/RequestForm.jsx';
 import RequestCard from '@/components/customer/RequestCard.jsx';
 import RatingModal from '@/components/customer/RatingModal.jsx';
@@ -38,7 +36,7 @@ const CustomerHomeScreen = () => {
   const [chatRequestId, setChatRequestId] = useState(null);
   const [ratingOpen, setRatingOpen] = useState(null);
   const [stars, setStars] = useState(0);
-  const [comment, setComment] = useState('');
+  const [ratingComment, setRatingComment] = useState('');
   const [complaintOpen, setComplaintOpen] = useState(null);
   const [complaintText, setComplaintText] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(null);
@@ -46,7 +44,8 @@ const CustomerHomeScreen = () => {
   const [cancelVisitOpen, setCancelVisitOpen] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
 
-  const fetchData = async () => {
+  // --- جلب كل البيانات ---
+  const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { navigate('/login/customer'); return; }
 
@@ -59,7 +58,8 @@ const CustomerHomeScreen = () => {
     const { data: adminData } = await supabase.from('admins').select('id').eq('id', user.id).maybeSingle();
     if (adminData) setIsAdmin(true);
 
-    const { data: reqs } = await supabase.from('maintenance_requests')
+    const { data: reqs } = await supabase
+      .from('maintenance_requests')
       .select('*')
       .eq('customer_id', user.id)
       .in('status', ['pending', 'bidding', 'assigned', 'accepted', 'on_the_way', 'in_progress', 'completed', 'cancelled'])
@@ -68,33 +68,76 @@ const CustomerHomeScreen = () => {
     const requestsList = reqs || [];
     setRequests(requestsList);
 
+    // --- جلب العروض بالطريقة المنفصلة والآمنة ---
     const biddingIds = requestsList.filter(r => r.status === 'pending' || r.status === 'bidding').map(r => r.id);
     if (biddingIds.length > 0) {
-      const { data: bidsData } = await supabase.from('bids')
-        .select('request_id, technician:technician_id ( id, full_name, phone, specialization, lat, lng, avg_rating )')
+      const { data: bidsData } = await supabase
+        .from('bids')
+        .select('request_id, technician_id')
         .in('request_id', biddingIds);
-      if (bidsData) {
+
+      if (bidsData && bidsData.length > 0) {
+        const techIds = [...new Set(bidsData.map(b => b.technician_id))];
+
+        const { data: techsData } = await supabase
+          .from('technicians')
+          .select('id, full_name, phone, specialization, avg_rating')
+          .in('id', techIds);
+
+        const techMap = {};
+        if (techsData) {
+          techsData.forEach(tech => { techMap[tech.id] = tech; });
+        }
+
         const map = {};
         bidsData.forEach(b => {
-          const tech = b.technician;
-          if (!tech?.id) return;
+          const tech = techMap[b.technician_id];
+          if (!tech) return;
           if (!map[b.request_id]) map[b.request_id] = [];
-          map[b.request_id].push({ ...tech, distance: null });
+          map[b.request_id].push({
+            id: tech.id,
+            full_name: tech.full_name || 'فني',
+            phone: tech.phone || '',
+            specialization: tech.specialization || '',
+            avg_rating: tech.avg_rating || 0,
+            distance: null,
+          });
         });
         setBiddersMap(map);
+      } else {
+        setBiddersMap({});
       }
+    } else {
+      setBiddersMap({});
     }
+
     setPageReady(true);
+  }, [navigate]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // --- دوال مساعدة ---
+  const handleFieldChange = (field, value) => setReqForm(prev => ({ ...prev, [field]: value }));
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) return;
+    setGettingLoc(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setReqForm(prev => ({ ...prev, lat: pos.coords.latitude, lng: pos.coords.longitude }));
+        setGettingLoc(false);
+      },
+      () => { setGettingLoc(false); toast({ description: 'فشل تحديد الموقع.' }); }
+    );
   };
 
-  useEffect(() => { fetchData(); }, []);
-
-  // --- دوال الإجراءات (الكاملة) ---
+  // --- دوال الإجراءات ---
   const handleCreateRequest = async () => {
     if (!reqForm.deviceType || !reqForm.issueDescription || !reqForm.phoneNumber || reqForm.lat == null) {
       toast({ description: 'جميع الحقول والموقع مطلوبة.' }); return;
     }
     if (balance < VISIT_FEE) { toast({ description: 'الرصيد غير كافٍ.' }); return; }
+
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
     const newBalance = balance - VISIT_FEE;
@@ -118,7 +161,7 @@ const CustomerHomeScreen = () => {
       await supabase.from('customers').update({ balance }).eq('id', user.id);
       toast({ description: 'فشل: ' + error.message });
     } else {
-      toast({ description: 'تم إرسال الطلب!' });
+      toast({ description: 'تم إرسال الطلب! تم خصم 100 جنيه.' });
       setRequests(prev => [data[0], ...prev]);
       setReqForm(prev => ({ ...prev, deviceType: '', issueDescription: '', address: '' }));
     }
@@ -193,25 +236,13 @@ const CustomerHomeScreen = () => {
     const req = requests.find(r => r.id === reqId);
     const { error } = await supabase.from('technician_ratings').insert({
       request_id: reqId, technician_id: req.technician_id,
-      customer_id: customer.id, rating: stars, comment: comment,
+      customer_id: customer.id, rating: stars, comment: ratingComment,
     });
     if (error) toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
     else {
       toast({ title: 'تم', description: 'شكراً لتقييمك!' });
-      setRatingOpen(null); setStars(0); setComment('');
+      setRatingOpen(null); setStars(0); setRatingComment('');
     }
-  };
-
-  const handleGetLocation = () => {
-    if (!navigator.geolocation) return;
-    setGettingLoc(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setReqForm(prev => ({ ...prev, lat: pos.coords.latitude, lng: pos.coords.longitude }));
-        setGettingLoc(false);
-      },
-      () => { setGettingLoc(false); toast({ description: 'فشل تحديد الموقع.' }); }
-    );
   };
 
   if (!pageReady) return <div className="min-h-screen flex items-center justify-center"><RefreshCw className="animate-spin" size={32} /></div>;
@@ -229,27 +260,73 @@ const CustomerHomeScreen = () => {
         <Button variant="ghost" onClick={() => { localStorage.clear(); navigate('/user-type'); }}><LogOut /> {t('logout')}</Button>
       </header>
 
-      <RequestForm reqForm={reqForm} onFieldChange={(f,v) => setReqForm(p => ({...p, [f]:v}))} onGetLocation={handleGetLocation} onCreate={handleCreateRequest} submitting={submitting} gettingLoc={gettingLoc} />
+      <RequestForm
+        reqForm={reqForm}
+        onFieldChange={handleFieldChange}
+        onGetLocation={handleGetLocation}
+        onCreate={handleCreateRequest}
+        submitting={submitting}
+        gettingLoc={gettingLoc}
+      />
 
       <div className="flex gap-4 mb-6">
-        <Button variant={activeTab === 'active' ? 'default' : 'outline'} onClick={() => setActiveTab('active')}>النشطة ({activeRequests.length})</Button>
-        <Button variant={activeTab === 'archived' ? 'default' : 'outline'} onClick={() => setActiveTab('archived')}>المؤرشفة ({archivedRequests.length})</Button>
+        <Button variant={activeTab === 'active' ? 'default' : 'outline'} onClick={() => setActiveTab('active')}>قيد التنفيذ ({activeRequests.length})</Button>
+        <Button variant={activeTab === 'archived' ? 'default' : 'outline'} onClick={() => setActiveTab('archived')}>الأرشيف ({archivedRequests.length})</Button>
       </div>
 
       {activeTab === 'active' && activeRequests.map(req => (
-        <RequestCard key={req.id} req={req} bidders={biddersMap[req.id]} onSelect={handleSelectTechnician} onCancel={handleCancelRequest} onCancelVisit={(id) => setCancelVisitOpen(id)} onComplaint={(id) => setComplaintOpen(id)} onFeedback={(id) => setFeedbackOpen(id)} onChat={(id) => setChatRequestId(id)} onRate={(id) => setRatingOpen(id)} />
+        <RequestCard
+          key={req.id}
+          req={req}
+          bidders={biddersMap[req.id]}
+          onSelect={handleSelectTechnician}
+          onCancel={handleCancelRequest}
+          onCancelVisit={(id) => setCancelVisitOpen(id)}
+          onComplaint={(id) => setComplaintOpen(id)}
+          onFeedback={(id) => setFeedbackOpen(id)}
+          onChat={(id) => setChatRequestId(id)}
+          onRate={(id) => setRatingOpen(id)}
+        />
       ))}
 
       {activeTab === 'archived' && archivedRequests.map(req => (
         <RequestCard key={req.id} req={req} onRate={(id) => setRatingOpen(id)} />
       ))}
 
-      <RatingModal open={ratingOpen} onClose={() => setRatingOpen(null)} onSubmit={() => handleSubmitRating(ratingOpen)} stars={stars} setStars={setStars} comment={comment} setComment={setComment} />
-      <ComplaintModal open={complaintOpen} onClose={() => setComplaintOpen(null)} onSubmit={() => handleSubmitComplaint(complaintOpen)} text={complaintText} setText={setComplaintText} />
-      <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(null)} onSubmit={() => handleSubmitFeedback(feedbackOpen)} text={feedbackText} setText={setFeedbackText} />
-      <CancelVisitModal open={cancelVisitOpen} onClose={() => setCancelVisitOpen(null)} onSubmit={() => handleCancelVisit(cancelVisitOpen)} reason={cancelReason} setReason={setCancelReason} />
+      <RatingModal
+        open={!!ratingOpen}
+        onClose={() => setRatingOpen(null)}
+        onSubmit={() => handleSubmitRating(ratingOpen)}
+        stars={stars}
+        setStars={setStars}
+        comment={ratingComment}
+        setComment={setRatingComment}
+      />
+      <ComplaintModal
+        open={!!complaintOpen}
+        onClose={() => setComplaintOpen(null)}
+        onSubmit={() => handleSubmitComplaint(complaintOpen)}
+        text={complaintText}
+        setText={setComplaintText}
+      />
+      <FeedbackModal
+        open={!!feedbackOpen}
+        onClose={() => setFeedbackOpen(null)}
+        onSubmit={() => handleSubmitFeedback(feedbackOpen)}
+        text={feedbackText}
+        setText={setFeedbackText}
+      />
+      <CancelVisitModal
+        open={!!cancelVisitOpen}
+        onClose={() => setCancelVisitOpen(null)}
+        onSubmit={() => handleCancelVisit(cancelVisitOpen)}
+        reason={cancelReason}
+        setReason={setCancelReason}
+      />
 
-      {chatRequestId && <ChatPopup requestId={chatRequestId} currentUser={{ id: customer?.id, userType: 'customer' }} onClose={() => setChatRequestId(null)} />}
+      {chatRequestId && (
+        <ChatPopup requestId={chatRequestId} currentUser={{ id: customer?.id, userType: 'customer' }} onClose={() => setChatRequestId(null)} />
+      )}
       {isAdmin && <AdminPanel />}
     </motion.div>
   );
