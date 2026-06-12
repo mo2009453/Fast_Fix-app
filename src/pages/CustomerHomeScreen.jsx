@@ -76,13 +76,18 @@ const CustomerHomeScreen = () => {
         .select('request_id, technician_id')
         .in('request_id', biddingIds);
 
+      console.log('bidsData:', bidsData);
+
       if (bidsData && bidsData.length > 0) {
         const techIds = [...new Set(bidsData.map(b => b.technician_id))];
+        console.log('techIds:', techIds);
 
         const { data: techsData } = await supabase
           .from('technicians')
           .select('id, full_name, phone, specialization, avg_rating')
           .in('id', techIds);
+
+        console.log('techsData:', techsData);
 
         const techMap = {};
         if (techsData) {
@@ -103,6 +108,7 @@ const CustomerHomeScreen = () => {
             distance: null,
           });
         });
+        console.log('biddersMap:', map);
         setBiddersMap(map);
       } else {
         setBiddersMap({});
